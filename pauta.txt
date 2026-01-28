@@ -1,0 +1,49 @@
+
+Aquest document detalla la fusió de **FinMatch v34** i el nou motor **TaxVision Pro** sota un nou projecte independent a Supabase.
+
+---
+
+# ESPECIFICACIONS TÈCNIQUES: PROJECTE FUSIÓ "FINMATCH + TAXVISION PRO"
+
+## 1. OBJECTIU DE LA FUSIÓ
+
+Integrar la capacitat de visió multimodal de **Google Gemini 1.5 Flash** en l'ecosistema de conciliació de FinMatch. El sistema permetrà l'entrada de dades mitjançant imatges i PDFs, processant tipus d'IVA actualitzats (2%, 4%, 5%, 10%, 21%), bases exemptes i retencions d'IRPF, de manera independent al projecte original.
+
+## 2. ARQUITECTURA DE LA BASE DE DADES (SUPABASE SQL)
+
+El nou projecte utilitzarà la taula `registres_fiscals_fusionats` amb el següent esquema per garantir la traçabilitat i el detall fiscal:
+
+* **Identificació**: `id` (UUID), `data`, `proveedor`, `nif_proveedor`, `num_factura`.
+* **Detall IVA**: Bases i cuotes individuals per a 2%, 4%, 5%, 10% i 21%.
+* **Camps Especialitzats**:
+* `base_exempta`: Per a imports sense IVA.
+* `base_irpf`, `percentatge_irpf`, `import_irpf`: Per a factures amb retenció.
+
+
+* **Totals i Control**: `total_factura`, `unique_hash` (per evitar duplicats) i `url_document` (link al document a Supabase Storage).
+
+## 3. MOTOR DE VISIÓ: GOOGLE GEMINI 1.5 FLASH
+
+L'extracció s'executarà mitjançant una **Supabase Edge Function** que realitza les següents tasques:
+
+* **Anàlisi Visual**: Processament directe del fitxer (imatge o PDF) sense necessitat d'OCR de text pla.
+* **System Prompt**: Configuració específica per a Gemini per identificar desglossaments complexos i retornar un JSON estructurat.
+* **Seguretat**: Protecció de la `GOOGLE_API_KEY` a nivell de servidor.
+
+## 4. INTERFÍCIE D'USUARI (UX/UI)
+
+La interfície unifica les funcionalitats de càrrega visual i conciliació bancària:
+
+* **Mòdul d'Escaneig**: Botó "Escanejar amb Gemini" integrat a la barra superior *sticky*.
+* **Taula de Revisió Dinàmica**: Permet editar els camps detectats per la IA abans del guardat definitiu.
+* **Validació Matemàtica**: Sistema de control que verifica la integritat del tiquet seguint la fórmula:
+> 
+
+
+
+## 5. CONCILIACIÓ I GESTIÓ
+
+* Les factures escanejades s'injecten a la llista de conciliació de FinMatch.
+* Es manté l'algoritme de **"Auto-Match"** per vincular les noves factures amb els moviments bancaris existents segons import i data.
+
+---
