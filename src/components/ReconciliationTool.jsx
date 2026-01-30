@@ -611,14 +611,14 @@ export default function ReconciliationTool() {
   const diff = Math.abs(totalSelected + bankSelectedAmt);
 
   return (
-    <div className="w-full min-h-screen bg-slate-100 p-2 font-sans text-[11px]">
+    <div className="w-full min-h-screen bg-slate-50 dark:bg-slate-900 p-2 font-sans text-[11px] text-slate-800 dark:text-slate-100 transition-colors duration-200">
       {loading && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[100]">
-          <div className="bg-white p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4">
-            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-indigo-600"></div>
+          <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-2xl flex flex-col items-center gap-4 border border-slate-200 dark:border-slate-700">
+            <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-emerald-600 dark:border-emerald-500"></div>
             <div className="text-center">
-              <p className="text-lg font-bold text-gray-700">Carregant dades...</p>
-              <p className="text-sm text-gray-500 mt-2 font-mono">{loadingStatus}</p>
+              <p className="text-lg font-bold text-slate-700 dark:text-slate-200">Carregant dades...</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 font-mono">{loadingStatus}</p>
             </div>
           </div>
         </div>
@@ -627,28 +627,28 @@ export default function ReconciliationTool() {
       <iframe id="ifmcontentstoprint" className="hidden" title="print"></iframe>
 
       {/* HEADER */}
-      <div className="sticky top-0 z-50 w-full bg-white p-4 rounded-b-xl shadow-md mb-4 border-b flex items-center gap-4 no-print flex-wrap">
-        <h1 className="text-xl font-black text-indigo-700 italic border-r pr-4 uppercase tracking-tighter">FinMatch v34</h1>
+      <div className="sticky top-0 z-50 w-full bg-white dark:bg-slate-800 p-4 rounded-b-xl shadow-md mb-4 border-b border-slate-200 dark:border-emerald-500/20 flex items-center gap-4 no-print flex-wrap transition-colors duration-200">
+        <h1 className="text-xl font-black text-indigo-700 dark:text-emerald-400 italic border-r border-slate-200 dark:border-slate-600 pr-4 uppercase tracking-tighter">FinMatch v34</h1>
 
-        <div className="flex gap-1 bg-slate-50 p-1 rounded-lg border items-center">
+        <div className="flex gap-1 bg-slate-50 dark:bg-slate-700 p-1 rounded-lg border border-slate-200 dark:border-slate-600 items-center">
           <Calendar size={14} className="text-slate-400 mx-1" />
-          <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))} className="font-bold border-none bg-transparent outline-none cursor-pointer">
+          <select value={selectedYear} onChange={e => setSelectedYear(parseInt(e.target.value))} className="font-bold border-none bg-transparent outline-none cursor-pointer text-slate-700 dark:text-slate-200">
             {[2024, 2025, 2026].map(y => <option key={y} value={y}>{y}</option>)}
           </select>
           <div className="h-4 w-px bg-slate-300 mx-1"></div>
           {[1, 2, 3, 4].map(q => (
             <button key={q} onClick={() => setSelectedQuarters(prev => prev.includes(q) ? prev.filter(x => x !== q) : [...prev, q])}
-              className={`px-3 py-1 rounded font-bold transition-all ${selectedQuarters.includes(q) ? 'bg-indigo-600 text-white shadow-md' : 'bg-white text-slate-400 border'}`}>T{q}</button>
+              className={`px-3 py-1 rounded font-bold transition-all ${selectedQuarters.includes(q) ? 'bg-indigo-600 dark:bg-emerald-600 text-white shadow-md' : 'bg-white dark:bg-slate-600 text-slate-500 dark:text-slate-300 border border-slate-300 dark:border-slate-500 hover:bg-slate-50 dark:hover:bg-slate-500'}`}>T{q}</button>
           ))}
         </div>
 
         <div className="flex gap-2">
-          <input type="file" onChange={handleCSV} className="text-[9px] w-40" accept=".csv" />
-          <input type="file" onChange={handleExcel} className="text-[9px] w-40" accept=".xlsx,.xls" />
+          <input type="file" onChange={handleCSV} className="text-[9px] w-40 text-slate-500 dark:text-slate-400" accept=".csv" />
+          <input type="file" onChange={handleExcel} className="text-[9px] w-40 text-slate-500 dark:text-slate-400" accept=".xlsx,.xls" />
         </div>
 
 
-        <button onClick={handleAutoReconcile} disabled={loading} className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-bold uppercase shadow hover:bg-indigo-700 transition flex items-center gap-2 disabled:opacity-50">
+        <button onClick={handleAutoReconcile} disabled={loading} className="bg-indigo-600 dark:bg-emerald-600 text-white px-5 py-2 rounded-lg font-bold uppercase shadow hover:bg-indigo-700 dark:hover:bg-emerald-700 transition flex items-center gap-2 disabled:opacity-50">
           <Play size={12} fill="currentColor" /> {loading ? '...' : 'Auto-Conciliar'}
         </button>
 
@@ -662,19 +662,19 @@ export default function ReconciliationTool() {
 
       {/* MANUAL BAR (STICKY FIX) */}
       {(selectedInvIndices.size > 0 || selectedBankIdx !== null) && (
-        <div className="sticky top-[80px] z-40 w-full bg-amber-50 border-2 border-amber-300 p-4 rounded-2xl mb-4 flex justify-between items-center shadow-xl no-print">
+        <div className="sticky top-[80px] z-40 w-full bg-amber-50 dark:bg-slate-800 border-2 border-amber-300 dark:border-amber-500/50 p-4 rounded-2xl mb-4 flex justify-between items-center shadow-xl no-print">
           <div className="flex gap-10 items-center">
-            <div className="flex flex-col border-r border-amber-200 pr-10">
-              <span className="text-[9px] font-black text-amber-800 uppercase tracking-widest">Factures ({selectedInvIndices.size})</span>
-              <span className={`text-xl font-black ${totalSelected < 0 ? 'text-rose-600' : 'text-amber-900'}`}>{totalSelected.toFixed(2)}€</span>
+            <div className="flex flex-col border-r border-amber-200 dark:border-slate-600 pr-10">
+              <span className="text-[9px] font-black text-amber-800 dark:text-amber-500 uppercase tracking-widest">Factures ({selectedInvIndices.size})</span>
+              <span className={`text-xl font-black ${totalSelected < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-amber-900 dark:text-amber-400'}`}>{totalSelected.toFixed(2)}€</span>
             </div>
             <span className="text-3xl font-black text-amber-400">➔</span>
-            <div className="flex flex-col border-r border-amber-200 pr-10">
-              <span className="text-[9px] font-black text-amber-800 uppercase tracking-widest">Banc</span>
-              <span className={`text-xl font-black ${bankSelectedAmt < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{selectedBankIdx !== null ? `${bankSelectedAmt.toFixed(2)}€` : 'Tria...'}</span>
+            <div className="flex flex-col border-r border-amber-200 dark:border-slate-600 pr-10">
+              <span className="text-[9px] font-black text-amber-800 dark:text-amber-500 uppercase tracking-widest">Banc</span>
+              <span className={`text-xl font-black ${bankSelectedAmt < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}`}>{selectedBankIdx !== null ? `${bankSelectedAmt.toFixed(2)}€` : 'Tria...'}</span>
             </div>
             {selectedBankIdx !== null && selectedInvIndices.size > 0 && (
-              <div className={`px-6 py-2 rounded-xl border-4 font-black text-xl shadow-inner bg-white ${diff <= TOLERANCIA ? "text-emerald-600 border-emerald-300" : "text-rose-600 border-rose-300"}`}>
+              <div className={`px-6 py-2 rounded-xl border-4 font-black text-xl shadow-inner bg-white dark:bg-slate-900 ${diff <= TOLERANCIA ? "text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/50" : "text-rose-600 dark:text-rose-400 border-rose-300 dark:border-rose-500/50"}`}>
                 Dif: {diff.toFixed(2)}€
               </div>
             )}
@@ -706,7 +706,7 @@ export default function ReconciliationTool() {
               </button>
             )}
 
-            <button onClick={() => { setSelectedInvIndices(new Set()); setSelectedBankIdx(null) }} className="bg-white text-amber-800 font-bold px-5 py-3 rounded-2xl border-2 border-amber-200 shadow-sm"><RotateCcw size={20} /></button>
+            <button onClick={() => { setSelectedInvIndices(new Set()); setSelectedBankIdx(null) }} className="bg-white dark:bg-slate-700 text-amber-800 dark:text-amber-400 font-bold px-5 py-3 rounded-2xl border-2 border-amber-200 dark:border-amber-500/30 shadow-sm hover:bg-slate-50 dark:hover:bg-slate-600"><RotateCcw size={20} /></button>
           </div>
         </div>
       )}
@@ -714,8 +714,8 @@ export default function ReconciliationTool() {
       {/* TAULES GRID */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
         {/* FACTURES */}
-        <div id="win-factures" style={{ resize: 'vertical', height: '600px' }} className="bg-white rounded-xl shadow border flex flex-col overflow-auto min-h-[300px]">
-          <div className="p-3 bg-slate-800 text-white flex justify-between items-center no-print sticky top-0 z-20">
+        <div id="win-factures" style={{ resize: 'vertical', height: '600px' }} className="bg-white dark:bg-slate-800 rounded-xl shadow border border-slate-200 dark:border-slate-700 flex flex-col overflow-auto min-h-[300px]">
+          <div className="p-3 bg-slate-800 dark:bg-slate-900 text-white dark:text-slate-100 flex justify-between items-center no-print sticky top-0 z-20 border-b border-slate-700">
             <div className="flex items-center gap-4">
               <span className="font-bold uppercase text-[10px] tracking-widest">Factures ({invoiceStats.totals})</span>
               <div className="relative">
@@ -727,7 +727,7 @@ export default function ReconciliationTool() {
               {/* ⚠️ BOTÓ FILTRE PENDENTS */}
               <button
                 onClick={() => setShowPendingInv(!showPendingInv)}
-                className={`p-1.5 rounded transition-colors ${showPendingInv ? 'bg-amber-400 text-slate-900' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+                className={`p-1.5 rounded transition-colors ${showPendingInv ? 'bg-amber-400 text-slate-900' : 'bg-slate-700 text-slate-400 hover:text-white dark:hover:text-emerald-400'}`}
                 title="Només Pendents"
               >
                 <Filter size={16} />
@@ -744,7 +744,7 @@ export default function ReconciliationTool() {
           </div>
           <div className="flex-1">
             <table className="w-full text-left">
-              <thead className="bg-gray-50 sticky top-0 border-b z-10 font-bold uppercase text-gray-400 text-[9px]">
+              <thead className="bg-gray-50 dark:bg-slate-900 sticky top-0 border-b border-slate-200 dark:border-slate-700 z-10 font-bold uppercase text-gray-400 dark:text-slate-400 text-[9px]">
                 <tr>
                   <th className="p-2">Data</th>
                   <th className="p-2 text-center">Doc</th>
@@ -765,22 +765,22 @@ export default function ReconciliationTool() {
                   const amt = parseAmount(safeGet(inv, COL_FAC_TOTAL));
                   return (
                     <tr key={i} onClick={() => !isOK && setSelectedInvIndices(prev => { const n = new Set(prev); n.has(rIdx) ? n.delete(rIdx) : n.add(rIdx); return n; })}
-                      className={`border-b cursor-pointer transition-all ${isOK ? 'bg-emerald-50 text-emerald-700 opacity-60' : selectedInvIndices.has(rIdx) ? 'bg-amber-100 ring-2 ring-inset ring-amber-300' : 'hover:bg-gray-50'}`}>
-                      <td className="p-2 text-gray-400 font-mono">{safeGet(inv, COL_FAC_DATA)}</td>
+                      className={`border-b border-slate-100 dark:border-slate-700 cursor-pointer transition-all ${isOK ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-700 dark:text-emerald-400 opacity-60' : selectedInvIndices.has(rIdx) ? 'bg-amber-100 dark:bg-amber-900/30 ring-2 ring-inset ring-amber-300 dark:ring-amber-500/50' : 'hover:bg-gray-50 dark:hover:bg-slate-700'}`}>
+                      <td className="p-2 text-gray-400 dark:text-slate-400 font-mono">{safeGet(inv, COL_FAC_DATA)}</td>
                       <td className="p-2 text-center">
                         {safeGet(inv, COL_FAC_URL) ? (
                           <a href={safeGet(inv, COL_FAC_URL)} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-700" title="Veure factura original" onClick={e => e.stopPropagation()}>
                             <FileText size={14} />
                           </a>
                         ) : (
-                          <span className="text-gray-200">-</span>
+                          <span className="text-gray-300 dark:text-slate-600">-</span>
                         )}
                       </td>
-                      <td className="p-2 text-gray-500 text-[10px]">...{safeGet(inv, COL_FAC_NUM) || safeGet(inv, 'NUM FACTURA')}</td>
-                      <td className="p-2 font-bold">{safeGet(inv, COL_FAC_PROV)}</td>
-                      <td className="p-2 text-gray-500 text-[10px]">{safeGet(inv, COL_FAC_NIF) || safeGet(inv, 'NIF')}</td>
-                      <td className={`p-2 text-right font-black ${amt < 0 ? 'text-rose-600' : 'text-indigo-700'}`}>{safeGet(inv, COL_FAC_TOTAL) || safeGet(inv, 'TOTAL')}€</td>
-                      <td className="p-2 text-center">{isOK ? <CheckCircle size={16} className="text-emerald-500 mx-auto" /> : <AlertCircle size={16} className="text-gray-300 mx-auto" />}</td>
+                      <td className="p-2 text-gray-500 dark:text-slate-500 text-[10px]">...{safeGet(inv, COL_FAC_NUM) || safeGet(inv, 'NUM FACTURA')}</td>
+                      <td className="p-2 font-bold text-gray-700 dark:text-slate-300">{safeGet(inv, COL_FAC_PROV)}</td>
+                      <td className="p-2 text-gray-500 dark:text-slate-500 text-[10px]">{safeGet(inv, COL_FAC_NIF) || safeGet(inv, 'NIF')}</td>
+                      <td className={`p-2 text-right font-black ${amt < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-indigo-700 dark:text-emerald-400'}`}>{safeGet(inv, COL_FAC_TOTAL) || safeGet(inv, 'TOTAL')}€</td>
+                      <td className="p-2 text-center">{isOK ? <CheckCircle size={16} className="text-emerald-500 mx-auto" /> : <AlertCircle size={16} className="text-gray-300 dark:text-slate-600 mx-auto" />}</td>
                       <td className="p-2 text-center no-print">
                         {!isMatched && (
                           <button onClick={async (e) => {
@@ -789,7 +789,7 @@ export default function ReconciliationTool() {
                             if (adding) { n.add(rIdx); await saveConciliacio(invHash, null, 'cash'); }
                             else { n.delete(rIdx); await deleteConciliacio(invHash); }
                             setInvoiceCash(n);
-                          }} className={`p-1.5 rounded-full transition-colors ${isCash ? 'bg-emerald-200 text-emerald-700 border-2 border-emerald-400' : 'text-gray-300 hover:text-emerald-500'}`}><Banknote size={16} /></button>
+                          }} className={`p-1.5 rounded-full transition-colors ${isCash ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-400 dark:border-emerald-500/50' : 'text-gray-300 dark:text-slate-600 hover:text-emerald-500 dark:hover:text-emerald-400'}`}><Banknote size={16} /></button>
                         )}
                       </td>
                     </tr>
@@ -801,36 +801,36 @@ export default function ReconciliationTool() {
         </div>
 
         {/* BANC */}
-        <div id="win-banc" style={{ resize: 'vertical', height: '600px' }} className="bg-white rounded-xl shadow border flex flex-col overflow-auto min-h-[300px]">
-          <div className="p-3 bg-indigo-900 text-white flex justify-between items-center no-print text-[10px] sticky top-0 z-20">
+        <div id="win-banc" style={{ resize: 'vertical', height: '600px' }} className="bg-white dark:bg-slate-800 rounded-xl shadow border border-slate-200 dark:border-slate-700 flex flex-col overflow-auto min-h-[300px]">
+          <div className="p-3 bg-indigo-900 dark:bg-slate-900 text-white dark:text-slate-100 flex justify-between items-center no-print text-[10px] sticky top-0 z-20 border-b border-slate-700">
             <div className="flex items-center gap-4">
               <span className="font-bold uppercase tracking-widest">Banc ({bankStats.totals})</span>
               <div className="relative">
-                <Search size={14} className="absolute left-2 top-1.5 text-indigo-300" />
+                <Search size={14} className="absolute left-2 top-1.5 text-indigo-300 dark:text-slate-400" />
                 <input type="text" placeholder="Cercar..." value={bankSearch} onChange={e => setBankSearch(e.target.value)}
-                  className="pl-8 pr-2 py-1 text-[10px] rounded bg-indigo-800 border-none text-white placeholder-indigo-300 outline-none focus:ring-1 focus:ring-indigo-500 w-32" />
+                  className="pl-8 pr-2 py-1 text-[10px] rounded bg-indigo-800 dark:bg-slate-700 border-none text-white placeholder-indigo-300 dark:placeholder-slate-400 outline-none focus:ring-1 focus:ring-indigo-500 dark:focus:ring-slate-500 w-32" />
               </div>
 
               {/* ⚠️ BOTÓ FILTRE PENDENTS BANC */}
               <button
                 onClick={() => setShowPendingBank(!showPendingBank)}
-                className={`p-1.5 rounded transition-colors ${showPendingBank ? 'bg-amber-400 text-indigo-900' : 'bg-indigo-800 text-indigo-300 hover:text-white'}`}
+                className={`p-1.5 rounded transition-colors ${showPendingBank ? 'bg-amber-400 text-indigo-900' : 'bg-indigo-800 dark:bg-slate-700 text-indigo-300 dark:text-slate-400 hover:text-white'}`}
                 title="Només Pendents"
               >
                 <Filter size={16} />
               </button>
 
-              <div className="flex gap-3 text-[9px] bg-indigo-800 px-3 py-1 rounded-lg">
+              <div className="flex gap-3 text-[9px] bg-indigo-800 dark:bg-slate-700 px-3 py-1 rounded-lg">
                 <span className="text-emerald-400">OK: {bankStats.conciliades}</span>
-                <span className="w-px bg-indigo-700"></span>
+                <span className="w-px bg-indigo-700 dark:bg-slate-600"></span>
                 <span className="text-amber-400">Pendent: {bankStats.pendents}</span>
               </div>
             </div>
-            <button onClick={() => printSection('win-banc', 'Extracte Bancari')} className="p-1 hover:bg-indigo-800 rounded transition"><Printer size={16} /></button>
+            <button onClick={() => printSection('win-banc', 'Extracte Bancari')} className="p-1 hover:bg-indigo-800 dark:hover:bg-slate-700 rounded transition"><Printer size={16} /></button>
           </div>
           <div className="flex-1">
             <table className="w-full text-left">
-              <thead className="bg-gray-50 sticky top-0 border-b z-10 text-gray-400 font-bold uppercase">
+              <thead className="bg-gray-50 dark:bg-slate-900 sticky top-0 border-b border-slate-200 dark:border-slate-700 z-10 text-gray-400 dark:text-slate-400 font-bold uppercase">
                 <tr>
                   <th className="p-2">Data</th>
                   <th className="p-2">Moviment</th>
@@ -845,10 +845,10 @@ export default function ReconciliationTool() {
                   const isEx = bankExclusions.has(rIdx);
                   const amt = parseAmount(safeGet(row, COL_BANK_IMPORT));
                   return (
-                    <tr key={i} onClick={() => !isUsed && !isEx && setSelectedBankIdx(rIdx)} className={`border-b cursor-pointer transition-all ${isUsed || isEx ? 'bg-emerald-50 text-emerald-600 opacity-60' : selectedBankIdx === rIdx ? 'bg-amber-100 ring-2 ring-inset ring-amber-300' : 'hover:bg-gray-50'}`}>
-                      <td className="p-2 text-gray-400 font-mono">{safeGet(row, COL_BANK_DATA) || '-'}</td>
-                      <td className="p-2 truncate max-w-[250px] italic">{String(safeGet(row, COL_BANK_DESC))}</td>
-                      <td className={`p-2 text-right font-black ${amt < 0 ? 'text-rose-600' : 'text-emerald-700'}`}>{safeGet(row, COL_BANK_IMPORT)}€</td>
+                    <tr key={i} onClick={() => !isUsed && !isEx && setSelectedBankIdx(rIdx)} className={`border-b border-slate-100 dark:border-slate-700 cursor-pointer transition-all ${isUsed || isEx ? 'bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 opacity-60' : selectedBankIdx === rIdx ? 'bg-amber-100 dark:bg-amber-900/30 ring-2 ring-inset ring-amber-300 dark:ring-amber-500/50' : 'hover:bg-gray-50 dark:hover:bg-slate-700'}`}>
+                      <td className="p-2 text-gray-400 dark:text-slate-400 font-mono">{safeGet(row, COL_BANK_DATA) || '-'}</td>
+                      <td className="p-2 truncate max-w-[250px] italic text-gray-500 dark:text-slate-300">{String(safeGet(row, COL_BANK_DESC))}</td>
+                      <td className={`p-2 text-right font-black ${amt < 0 ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'}`}>{safeGet(row, COL_BANK_IMPORT)}€</td>
                       <td className="p-2 text-center no-print">
                         {!isUsed && (
                           <button onClick={async (e) => {
@@ -857,7 +857,7 @@ export default function ReconciliationTool() {
                             if (adding) { n.add(rIdx); await saveConciliacio(bankHash, null, 'exclos'); }
                             else { n.delete(rIdx); await deleteConciliacio(bankHash); }
                             setBankExclusions(n);
-                          }} className={`p-1.5 rounded-full transition-colors ${isEx ? 'bg-emerald-200 text-emerald-700 border-2 border-emerald-400' : 'text-gray-300 hover:text-emerald-500'}`}><BookmarkCheck size={16} /></button>
+                          }} className={`p-1.5 rounded-full transition-colors ${isEx ? 'bg-emerald-200 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border-2 border-emerald-400 dark:border-emerald-500/50' : 'text-gray-300 dark:text-slate-600 hover:text-emerald-500 dark:hover:text-emerald-400'}`}><BookmarkCheck size={16} /></button>
                         )}
                       </td>
                     </tr>
@@ -870,8 +870,8 @@ export default function ReconciliationTool() {
       </div>
 
       {/* RESUM PAIRED */}
-      <div id="win-paired" style={{ resize: 'vertical', height: '350px' }} className="w-full bg-white rounded-xl shadow-2xl border-2 border-emerald-300 overflow-auto mb-12 min-h-[150px] flex flex-col">
-        <div className="p-3 bg-emerald-600 text-white flex justify-between items-center no-print sticky top-0 z-20">
+      <div id="win-paired" style={{ resize: 'vertical', height: '350px' }} className="w-full bg-white dark:bg-slate-800 rounded-xl shadow-2xl border-2 border-emerald-300 dark:border-emerald-500/30 overflow-auto mb-12 min-h-[150px] flex flex-col">
+        <div className="p-3 bg-emerald-600 dark:bg-emerald-700 text-white flex justify-between items-center no-print sticky top-0 z-20">
           <div className="flex items-center gap-4">
             <span className="font-black uppercase text-[10px] tracking-widest text-white">Resum Conciliades</span>
             <div className="flex gap-3 text-[9px] bg-emerald-700 px-3 py-1 rounded-lg">
@@ -884,9 +884,9 @@ export default function ReconciliationTool() {
           </div>
         </div>
         {showPaired && (
-          <div className="flex-1">
+          <div className="flex-1 bg-white dark:bg-slate-800">
             <table className="w-full text-left text-[9px] border-collapse">
-              <thead className="bg-emerald-50 sticky top-0 border-b font-bold uppercase text-emerald-800 z-10">
+              <thead className="bg-emerald-50 dark:bg-slate-900 sticky top-0 border-b dark:border-slate-700 font-bold uppercase text-emerald-800 dark:text-emerald-400 z-10">
                 <tr>
                   <th className="p-2 w-16 text-center">Tipus</th>
                   <th className="p-2 w-20">Data Fac</th>
@@ -901,37 +901,37 @@ export default function ReconciliationTool() {
               <tbody>
                 {/* SF */}
                 {filteredBankExclusionsList.map((bankIdx, i) => (
-                  <tr key={`sf-${i}`} className="border-b bg-orange-50/50 text-orange-900 font-medium">
+                  <tr key={`sf-${i}`} className="border-b border-slate-100 dark:border-slate-700 bg-orange-50/50 dark:bg-orange-900/10 text-orange-900 dark:text-orange-400 font-medium">
                     <td className="p-2 font-black text-center uppercase">SF</td>
-                    <td className="p-2 text-gray-400" colSpan="3"><span className="italic font-bold text-orange-800">Sense factura</span></td>
-                    <td className="p-2 font-mono text-gray-400">{safeGet(bankData[bankIdx], COL_BANK_DATA)}</td>
-                    <td className="p-2 pl-4"><span className="italic truncate block">{String(safeGet(bankData[bankIdx], COL_BANK_DESC))}</span></td>
-                    <td className="p-2 text-right font-black text-rose-700">{safeGet(bankData[bankIdx], COL_BANK_IMPORT)}€</td>
-                    <td className="p-2 text-center no-print"><button onClick={async () => { const bankHash = bankData[bankIdx].unique_hash; const n = new Set(bankExclusions); n.delete(bankIdx); setBankExclusions(n); await deleteConciliacio(bankHash); }} className="text-rose-500 hover:bg-rose-100 p-1.5 rounded-full"><XCircle size={18} /></button></td>
+                    <td className="p-2 text-gray-400 dark:text-slate-500" colSpan="3"><span className="italic font-bold text-orange-800 dark:text-orange-500">Sense factura</span></td>
+                    <td className="p-2 font-mono text-gray-400 dark:text-slate-500">{safeGet(bankData[bankIdx], COL_BANK_DATA)}</td>
+                    <td className="p-2 pl-4"><span className="italic truncate block text-black dark:text-slate-400">{String(safeGet(bankData[bankIdx], COL_BANK_DESC))}</span></td>
+                    <td className="p-2 text-right font-black text-rose-700 dark:text-rose-500">{safeGet(bankData[bankIdx], COL_BANK_IMPORT)}€</td>
+                    <td className="p-2 text-center no-print"><button onClick={async () => { const bankHash = bankData[bankIdx].unique_hash; const n = new Set(bankExclusions); n.delete(bankIdx); setBankExclusions(n); await deleteConciliacio(bankHash); }} className="text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/30 p-1.5 rounded-full"><XCircle size={18} /></button></td>
                   </tr>
                 ))}
                 {/* CASH */}
                 {filteredCashList.map((idx, i) => (
-                  <tr key={`c-${i}`} className="border-b bg-emerald-50/20 italic text-emerald-900 font-medium">
+                  <tr key={`c-${i}`} className="border-b border-slate-100 dark:border-slate-700 bg-emerald-50/20 dark:bg-emerald-900/10 italic text-emerald-900 dark:text-emerald-400 font-medium">
                     <td className="p-2 font-black text-center uppercase">Cash</td>
                     <td className="p-2 font-mono">{safeGet(invoices[idx], COL_FAC_DATA)}</td>
                     <td className="p-2">{safeGet(invoices[idx], COL_FAC_PROV)}</td>
-                    <td className="p-2 text-right font-black border-r">{safeGet(invoices[idx], COL_FAC_TOTAL)}€</td>
-                    <td className="p-2 pl-4 text-gray-400 italic" colSpan="3">Pagament fora de circuit bancari</td>
-                    <td className="p-2 text-center no-print"><button onClick={async () => { const invHash = invoices[idx].unique_hash; const n = new Set(invoiceCash); n.delete(idx); setInvoiceCash(n); await deleteConciliacio(invHash); }} className="text-rose-500 hover:bg-rose-100 p-1.5 rounded-full"><XCircle size={18} /></button></td>
+                    <td className="p-2 text-right font-black border-r border-slate-100 dark:border-slate-700">{safeGet(invoices[idx], COL_FAC_TOTAL)}€</td>
+                    <td className="p-2 pl-4 text-gray-400 dark:text-slate-500 italic" colSpan="3">Pagament fora de circuit bancari</td>
+                    <td className="p-2 text-center no-print"><button onClick={async () => { const invHash = invoices[idx].unique_hash; const n = new Set(invoiceCash); n.delete(idx); setInvoiceCash(n); await deleteConciliacio(invHash); }} className="text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/30 p-1.5 rounded-full"><XCircle size={18} /></button></td>
                   </tr>
                 ))}
                 {/* BANC */}
                 {filteredMatchesList.map(([invIdx, bIdx], i) => (
-                  <tr key={`m-${i}`} className="border-b hover:bg-emerald-50 font-medium transition-colors">
-                    <td className="p-2 font-black text-blue-800 text-center uppercase">Banc</td>
+                  <tr key={`m-${i}`} className="border-b border-slate-100 dark:border-slate-700 hover:bg-emerald-50 dark:hover:bg-slate-700 font-medium transition-colors text-slate-900 dark:text-slate-300">
+                    <td className="p-2 font-black text-blue-800 dark:text-blue-400 text-center uppercase">Banc</td>
                     <td className="p-2 font-mono">{safeGet(invoices[invIdx], COL_FAC_DATA)}</td>
                     <td className="p-2 font-bold">{safeGet(invoices[invIdx], COL_FAC_PROV)}</td>
-                    <td className="p-2 text-right font-black border-r">{safeGet(invoices[invIdx], COL_FAC_TOTAL)}€</td>
+                    <td className="p-2 text-right font-black border-r border-slate-100 dark:border-slate-700">{safeGet(invoices[invIdx], COL_FAC_TOTAL)}€</td>
                     <td className="p-2 font-mono">{safeGet(bankData[bIdx], COL_BANK_DATA)}</td>
-                    <td className="p-2 pl-4"><span className="italic text-gray-500 truncate block">{String(safeGet(bankData[bIdx], COL_BANK_DESC))}</span></td>
-                    <td className="p-2 text-right font-black text-rose-700">{safeGet(bankData[bIdx], COL_BANK_IMPORT)}€</td>
-                    <td className="p-2 text-center no-print"><button onClick={async () => { const invHash = invoices[invIdx].unique_hash; const n = { ...matches }; delete n[invIdx]; setMatches(n); await deleteConciliacio(invHash); }} className="text-rose-500 hover:bg-rose-100 p-1.5 rounded-full"><Unlink size={18} /></button></td>
+                    <td className="p-2 pl-4"><span className="italic text-gray-500 dark:text-slate-500 truncate block">{String(safeGet(bankData[bIdx], COL_BANK_DESC))}</span></td>
+                    <td className="p-2 text-right font-black text-rose-700 dark:text-rose-400">{safeGet(bankData[bIdx], COL_BANK_IMPORT)}€</td>
+                    <td className="p-2 text-center no-print"><button onClick={async () => { const invHash = invoices[invIdx].unique_hash; const n = { ...matches }; delete n[invIdx]; setMatches(n); await deleteConciliacio(invHash); }} className="text-rose-500 hover:bg-rose-100 dark:hover:bg-rose-900/30 p-1.5 rounded-full"><Unlink size={18} /></button></td>
                   </tr>
                 ))}
               </tbody>

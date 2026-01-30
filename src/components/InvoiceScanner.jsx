@@ -1,903 +1,929 @@
-import React, { useState, useEffect } from 'react';
-import { Upload, Download, Trash2, FileText, Loader2, Eye, AlertCircle, Edit2, Save, X, Printer, ExternalLink, FileDown, FileUp, Scan } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  Plus,
+  Trash2,
+  FileText,
+  CheckCircle,
+  AlertCircle,
+  Download,
+  Eye,
+  Loader2,
+  ZoomIn,
+  ZoomOut,
+  RotateCw,
+  Save,
+  X,
+  Mail,
+  ChevronRight,
+  ChevronLeft,
+  Scan,
+  Send,
+  Calendar,
+  DollarSign,
+  Tag,
+  Clock
+} from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize Supabase client
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Fail gracefully if config is missing (for local dev without env vars)
-const supabase = (supabaseUrl && supabaseUrl.startsWith('http'))
+const supabase = (supabaseUrl && supabaseAnonKey)
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-export default function InvoiceScannerMulti() {
-  const [invoices, setInvoices] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [saveStatus, setSaveStatus] = useState('');
-  const [selectedInvoice, setSelectedInvoice] = useState(null);
-  const [previewSize, setPreviewSize] = useState(40);
-  const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({});
+// --- SISTEMA DE CACHÉ GLOBAL ---
+// Guardem les miniatures aquí per evitar carregar-les cada vegada que s'obre el modal
+const thumbnailCache = {};
 
-  // Estats per la cua de processament
-  const [queue, setQueue] = useState([]);
-  const [processing, setProcessing] = useState(false);
-  const [currentFile, setCurrentFile] = useState(null);
-  const [processedCount, setProcessedCount] = useState(0);
-  const [totalFiles, setTotalFiles] = useState(0);
+// --- COMPONENTS AUXILIARS PER GMAIL ---
 
-  const STORAGE_KEY = 'invoices-data-fusion-v1';
+const ImageThumbnail = React.memo(({ attachment }) => {
+  const [imgData, setImgData] = useState(thumbnailCache[attachment.id] || null);
+  const [loadingImg, setLoadingImg] = useState(!thumbnailCache[attachment.id]);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setInvoices(parsed);
-        setSaveStatus(`✓ ${parsed.length} factures carregades`);
-        setTimeout(() => setSaveStatus(''), 2000);
-      }
-    } catch (err) {
-      console.error('Error carregant:', err);
-    }
-  }, []);
+    if (thumbnailCache[attachment.id]) return;
 
-  const saveToStorage = (data) => {
+    const loadThumbnail = async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('get-attachment', {
+          body: { messageId: attachment.messageId, attachmentId: attachment.id }
+        });
+
+        if (error || !data?.data) throw new Error("No data");
+
+        let finalData = "";
+        if (attachment.mimeType === 'application/pdf') {
+          if (!window.pdfjsLib) {
+            const script = document.createElement('script');
+            script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js';
+            document.head.appendChild(script);
+            await new Promise(resolve => script.onload = resolve);
+          }
+          const pdfjsLib = window.pdfjsLib;
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+          const loadingTask = pdfjsLib.getDocument({ data: atob(data.data) });
+          const pdf = await loadingTask.promise;
+          const page = await pdf.getPage(1);
+          const viewport = page.getViewport({ scale: 0.5 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          await page.render({ canvasContext: context, viewport }).promise;
+          finalData = canvas.toDataURL();
+        } else {
+          finalData = `data:${attachment.mimeType};base64,${data.data}`;
+        }
+
+        thumbnailCache[attachment.id] = finalData;
+        setImgData(finalData);
+      } catch (e) {
+        console.error("Error miniatura:", e);
+      } finally {
+        setLoadingImg(false);
+      }
+    };
+
+    loadThumbnail();
+  }, [attachment.id]);
+
+  return (
+    <div className="h-72 bg-slate-950 flex items-center justify-center border-b border-slate-700 overflow-hidden relative group">
+      {loadingImg ? (
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+        </div>
+      ) : imgData ? (
+        <img src={imgData} className="w-full h-full object-contain bg-white group-hover:scale-110 transition-transform duration-700" />
+      ) : (
+        <div className="flex flex-col items-center opacity-20 text-slate-400">
+          <FileText size={40} />
+          <span className="text-[10px] mt-2 font-bold uppercase">{attachment.mimeType.split('/')[1]}</span>
+        </div>
+      )}
+      <div className="absolute top-2 right-2 bg-emerald-600 px-2 py-0.5 rounded text-[9px] font-black text-white uppercase shadow-lg z-10">
+        {attachment.mimeType.split('/')[1]}
+      </div>
+    </div>
+  );
+});
+
+const EmailAttachmentCard = React.memo(({ att, email, isImported, onImport }) => {
+  return (
+    <div className="flex flex-col bg-slate-900 rounded-xl border border-slate-700 overflow-hidden group shadow-lg hover:border-emerald-500/50 transition-all duration-300">
+      <ImageThumbnail attachment={att} />
+      <div className="p-3 bg-slate-900">
+        <div className="flex items-center gap-2 mb-3">
+          <FileText size={14} className="text-emerald-400 shrink-0" />
+          <p className="text-[10px] text-slate-100 truncate font-bold flex-1" title={att.filename}>{att.filename}</p>
+        </div>
+        <div className="flex justify-between items-center gap-2">
+          <p className="text-[9px] text-slate-500 font-mono">
+            {att.size ? `${(Number(att.size) / 1024).toFixed(0)} KB` : '...'}
+          </p>
+          <button
+            onClick={() => !isImported && onImport(att, email)}
+            disabled={isImported}
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${isImported
+              ? 'bg-slate-800 text-slate-400 cursor-not-allowed uppercase border border-slate-700'
+              : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg uppercase active:scale-95'
+              }`}
+          >
+            {isImported ? 'FET' : 'IMPORTAR'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const InvoiceScanner = ({ isMock = false }) => {
+  const STORAGE_KEY = 'invoices-data-v1';
+
+  const [invoices, setInvoices] = useState(() => {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [queue, setQueue] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [saveStatus, setSaveStatus] = useState('');
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [totalFiles, setTotalFiles] = useState(0);
+
+  // Estats de selecció
+  const [selectedIds, setSelectedIds] = useState(new Set());
+
+  // Helper per formatar números a l'estil català (amb coma i 2 decimals)
+  const formatNum = (num) => {
+    if (num === null || num === undefined || isNaN(num)) return "0,00";
+    return num.toLocaleString('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+
+  // Helper per netejar l'entrada de text i convertir-la a número
+  const parseInput = (val) => {
+    const clean = val.replace(',', '.');
+    return parseFloat(clean) || 0;
+  };
+
+  // Guardar dades quan canviïn
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(invoices));
+  }, [invoices]);
+
+  const updateInvoice = (updated) => {
+    setInvoices(prev => prev.map(inv => inv.id === updated.id ? updated : inv));
+    if (selectedInvoice?.id === updated.id) setSelectedInvoice(updated);
+  };
+
+  const deleteInvoice = (id, e) => {
+    if (e) e.stopPropagation();
+    if (window.confirm('Esborrar aquesta factura?')) {
+      setInvoices(prev => prev.filter(inv => inv.id !== id));
+      if (selectedInvoice?.id === id) setSelectedInvoice(null);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  };
+
+  const sendToConciliation = async (invoice) => {
+    if (!supabase) return alert('Supabase no configurat');
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-      console.log('✓ Guardat:', data.length, 'factures');
+      const [day, month, year] = invoice.data.split(/[/-]/).map(Number);
+      const ejercicio = year < 100 ? 2000 + year : (year || new Date().getFullYear());
+      const trimestre = month ? Math.ceil(month / 3) : 1;
+      const hash = `AI_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`;
+
+      const contingut = {
+        "DATA": invoice.data,
+        "ULTIMA 4 DIGITS NUMERO FACTURA": String(invoice.id).slice(-4),
+        "PROVEEDOR": invoice.proveidor,
+        "NIF PROVEEDOR": invoice.nifProveidor,
+        "TOTAL FACTURA": invoice.totalFactura,
+        "URL FACTURA": invoice.imageUrl || ""
+      };
+
+      const { error } = await supabase.from('registres_comptables').insert({
+        tipus: 'factura',
+        contingut: contingut,
+        ejercicio: ejercicio,
+        trimestre: trimestre,
+        unique_hash: hash
+      });
+
+      if (error) throw error;
       return true;
     } catch (err) {
-      console.error('Error guardant:', err);
-      if (err.name === 'QuotaExceededError') {
-        alert('⚠️ MEMÒRIA PLENA!\n\nEl localStorage està ple. Solucions:\n1. Exporta un backup JSON (botó "Export JSON")\n2. Esborra factures antigues (botó 🗑️)\n3. Neteja tot i torna a importar el backup');
-      } else {
-        alert('Error guardant les dades. Exporta un backup!');
-      }
+      console.error('Error enviant:', err);
       return false;
     }
   };
 
-  const exportJSON = () => {
-    const data = {
-      version: '2.0', // Updated version for Fusion
-      exported: new Date().toISOString(),
-      count: invoices.length,
-      invoices: invoices
-    };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `factures_fusion_${new Date().toISOString().split('T')[0]}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    setSaveStatus('✓ Backup JSON descarregat');
-    setTimeout(() => setSaveStatus(''), 2000);
-  };
+  const handleBulkSend = async () => {
+    const toSend = invoices.filter(inv => selectedIds.has(inv.id));
+    if (toSend.length === 0) return;
 
-  const importJSON = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    setProcessingBulk(true);
+    setSaveStatus(`Enviant ${toSend.length} factures...`);
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target.result);
-        if (data.invoices && Array.isArray(data.invoices)) {
-          setInvoices(data.invoices);
-          saveToStorage(data.invoices);
-          setSaveStatus(`✓ ${data.invoices.length} factures importades`);
-          setTimeout(() => setSaveStatus(''), 3000);
-        } else {
-          alert('Format JSON invalid');
-        }
-      } catch (err) {
-        alert('Error llegint el fitxer: ' + err.message);
+    let successCount = 0;
+    for (const inv of toSend) {
+      const ok = await sendToConciliation(inv);
+      if (ok) {
+        successCount++;
+        // Eliminem de la llista local
+        setInvoices(prev => prev.filter(item => item.id !== inv.id));
       }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const toggleRevisat = (inv) => {
-    const updated = { ...inv, revisat: !inv.revisat };
-    const newList = invoices.map(i => i.id === inv.id ? updated : i);
-    setInvoices(newList);
-    if (selectedInvoice?.id === inv.id) setSelectedInvoice(updated);
-    saveToStorage(newList);
-  };
-
-  const startEdit = (inv) => {
-    setEditingId(inv.id);
-    setEditData({ ...inv });
-  };
-
-  const saveEdit = () => {
-    const newList = invoices.map(i => i.id === editingId ? editData : i);
-    setInvoices(newList);
-    if (selectedInvoice?.id === editingId) setSelectedInvoice(editData);
-    setEditingId(null);
-    saveToStorage(newList);
-  };
-
-  const updateField = (f, v) => setEditData(p => ({ ...p, [f]: v }));
-
-  // Funció auxiliar per convertir base64 a Blob
-  const base64ToBlob = (base64, mimeType) => {
-    const byteCharacters = atob(base64);
-    const byteArrays = [];
-    for (let offset = 0; offset < byteCharacters.length; offset += 512) {
-      const slice = byteCharacters.slice(offset, offset + 512);
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-    return new Blob(byteArrays, { type: mimeType });
-  };
-
-  // Funció per comprimir imatge abans de pujar
-  const compressImage = async (base64Str, maxWidth = 1500, quality = 0.7) => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.src = base64Str;
-      img.onload = () => {
-        let width = img.width;
-        let height = img.height;
-
-        if (width > maxWidth) {
-          height = Math.round((height * maxWidth) / width);
-          width = maxWidth;
-        }
-
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-
-        canvas.toBlob((blob) => {
-          resolve(blob);
-        }, 'image/jpeg', quality);
-      };
-    });
-  };
-
-  // Funció per enviar factures al conciliador (Supabase)
-  const sendToReconciliation = async () => {
-    if (!supabase) {
-      alert('Error: Supabase no està configurat. Revisa el fitxer .env');
-      return;
     }
 
-    if (invoices.length === 0) {
-      alert('No hi ha factures per enviar');
-      return;
-    }
-
-    const confirm = window.confirm(`Vols enviar ${invoices.length} factures al Conciliador?\n\nLes factures s'afegiran a Supabase i desapareixeran d'aquí.`);
-    if (!confirm) return;
-
-    // Validar que totes les factures tinguin dades mínimes
-    const facturesSenseDades = invoices.filter(inv =>
-      !inv.data || !inv.proveedor || !inv.total_factura
-    );
-
-    if (facturesSenseDades.length > 0) {
-      const confirmContinue = window.confirm(
-        `⚠️ ATENCIÓ: ${facturesSenseDades.length} factures tenen dades incompletes:\n\n` +
-        facturesSenseDades.map((inv, i) =>
-          `${i + 1}. ${inv.proveedor || 'Sense proveïdor'} - ${inv.total_factura || 'Sense total'} - ${inv.data || 'SENSE DATA'}`
-        ).join('\n') +
-        `\n\nVols continuar igualment? Les dades que faltin s'ompliran automàticament.`
-      );
-      if (!confirmContinue) return;
-    }
-
-    setLoading(true);
-    setSaveStatus('Preparant enviament...');
-
-    try {
-      const facturesPerSupabase = [];
-
-      // Processar factures una a una per pujar fitxers i preparar dades
-      for (let i = 0; i < invoices.length; i++) {
-        const inv = invoices[i];
-        setSaveStatus(`Pujant factura ${i + 1} de ${invoices.length}...`);
-
-        // Validar data
-        if (!inv.data || inv.data.trim() === '') {
-          inv.data = new Date().toLocaleDateString('es-ES');
-        }
-
-        const dateParts = inv.data.split('/');
-        const year = parseInt(dateParts[2]) || new Date().getFullYear();
-        const month = parseInt(dateParts[1]) || 1;
-        const trimestre = Math.ceil(month / 3);
-
-        const uniqueHash = `factura_${Date.now()}_${i}_${inv.id}_${inv.data}_${inv.proveedor}_${inv.total_factura}`.replace(/[\s/]/g, '_');
-        let publicUrl = null;
-
-        // Pujar fitxer a Supabase Storage
-        if (inv.imageUrl) {
-          try {
-            // Comprimir o preparar fitxer
-            let fileBlob;
-            let fileExt = 'jpg';
-
-            if (inv.fileType === 'application/pdf') {
-              fileExt = 'pdf';
-              // Per PDF no comprimim client-side simplificat, només pugem
-              fileBlob = base64ToBlob(inv.imageUrl.split(',')[1], 'application/pdf');
-            } else {
-              // És imatge, comprimim més agressivament per arribar a 8 anys (1200px, 0.6 qualitat)
-              fileBlob = await compressImage(inv.imageUrl, 1200, 0.6);
-            }
-
-            const fileName = `${year}/${trimestre}/${uniqueHash}.${fileExt}`;
-
-            const { error: uploadError } = await supabase.storage
-              .from('factures')
-              .upload(fileName, fileBlob, {
-                contentType: inv.fileType === 'application/pdf' ? 'application/pdf' : 'image/jpeg',
-                upsert: true
-              });
-
-            if (uploadError) throw uploadError;
-
-            // Obtenir URL pública
-            const { data: urlData } = supabase.storage
-              .from('factures')
-              .getPublicUrl(fileName);
-
-            publicUrl = urlData.publicUrl;
-            console.log(`✅ Fitxer pujat: ${publicUrl}`);
-
-          } catch (storageErr) {
-            console.error('Error pujant fitxer:', storageErr);
-            // Continuem igualment, sense fitxer adjunt
-          }
-        }
-
-        const factura = {
-          tipus: 'factura',
-          contingut: {
-            'DATA': inv.data,
-            'ULTIMA 4 DIGITS NUMERO FACTURA': inv.ultima_4_digits_numero_factura,
-            'PROVEEDOR': inv.proveedor,
-            'NIF PROVEEDOR': inv.nif_proveedor,
-            'TOTAL FACTURA': inv.total_factura,
-            'URL FACTURA': publicUrl // Afegim l'URL del fitxer
-          },
-          ejercicio: year,
-          trimestre: trimestre,
-          unique_hash: uniqueHash
-        };
-
-        facturesPerSupabase.push(factura);
-      }
-
-      console.log(`📊 Total factures preparades: ${facturesPerSupabase.length}`);
-      setSaveStatus('Guardant dades...');
-
-      // Inserir a Supabase (ignorant duplicats)
-      const { data, error } = await supabase
-        .from('registres_comptables')
-        .upsert(facturesPerSupabase, {
-          onConflict: 'unique_hash',
-          ignoreDuplicates: false
-        });
-
-      if (error) {
-        if (error.code === '23505') {
-          const confirmContinue = window.confirm(
-            '⚠️ Algunes factures ja existeixen al Conciliador.\n\n' +
-            'Vols continuar igualment? Les factures duplicades s\'actualitzaran.'
-          );
-          if (!confirmContinue) {
-            setLoading(false);
-            setSaveStatus('');
-            return;
-          }
-        } else {
-          throw error;
-        }
-      }
-
-      // Esborrar factures de l'InvoiceScanner
-      setInvoices([]);
-      saveToStorage([]);
-      setSelectedInvoice(null);
-
-      setSaveStatus(`✓ ${facturesPerSupabase.length} factures enviades i arxivades!`);
-      alert(`✅ ${facturesPerSupabase.length} factures pujades i guardades correctament!`);
-      setTimeout(() => setSaveStatus(''), 3000);
-
-    } catch (err) {
-      console.error('Error enviant factures:', err);
-      alert(`❌ Error enviant factures: ${err.message}`);
-      setSaveStatus('❌ Error');
-    } finally {
-      setLoading(false);
-    }
+    setSelectedIds(new Set());
+    setSelectedInvoice(null);
+    setProcessingBulk(false);
+    setSaveStatus(`✓ ${successCount} enviades i netejades`);
+    setTimeout(() => setSaveStatus(''), 3000);
   };
 
-  // Funció per validar si el total coincideix amb la suma de bases + IVAs - IRPF
-  const validateTotal = (inv) => {
-    // Convertir tots els valors a números amb 2 decimals per evitar errors de precisió
-    const parseNum = (val) => Math.round((Number(val) || 0) * 100) / 100;
+  const [processingBulk, setProcessingBulk] = useState(false);
 
-    const sumaBases =
-      parseNum(inv.base_iva_2) +
-      parseNum(inv.base_iva_4) +
-      parseNum(inv.base_iva_5) +
-      parseNum(inv.base_iva_10) +
-      parseNum(inv.base_iva_21) +
-      parseNum(inv.base_exempte);
-
-    const sumaIVAs =
-      parseNum(inv.import_iva_2) +
-      parseNum(inv.import_iva_4) +
-      parseNum(inv.import_iva_5) +
-      parseNum(inv.import_iva_10) +
-      parseNum(inv.import_iva_21);
-
-    // Usar valor absolut de l'IRPF perquè Gemini pot retornar-lo amb signe negatiu
-    const irpf = Math.abs(parseNum(inv.import_irpf));
-
-    // Calcular amb precisió de 2 decimals
-    const totalCalculat = Math.round((sumaBases + sumaIVAs - irpf) * 100) / 100;
-    const totalDeclarat = parseNum(inv.total_factura);
-    const diferencia = Math.abs(totalCalculat - totalDeclarat);
-
-    // DEBUG: Log per veure els valors
-    console.log('🔍 Validació:', {
-      proveedor: inv.proveedor,
-      bases: sumaBases,
-      ivas: sumaIVAs,
-      irpf: irpf,
-      totalCalculat,
-      totalDeclarat,
-      diferencia,
-      valid: diferencia <= 0.02
-    });
-
-    return {
-      valid: diferencia <= 0.02, // Tolerància de 2 cèntims per errors d'arrodoniment
-      totalCalculat: totalCalculat.toFixed(2),
-      totalDeclarat: totalDeclarat.toFixed(2),
-      diferencia: diferencia.toFixed(2)
-    };
-  };
-
-  const downloadPDF = (inv) => {
-    try {
-      const base64 = inv.imageUrl.split(',')[1];
-      const binaryString = atob(base64);
-      const len = binaryString.length;
-      const bytes = new Uint8Array(len);
-      for (let i = 0; i < len; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
-      }
-      const blob = new Blob([bytes], { type: 'application/pdf' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = inv.fileName || `factura_${inv.ultima_4_digits_numero_factura || Date.now()}.pdf`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      alert('Error descarregant el PDF');
-    }
-  };
-
-  const openInWindow = (inv) => {
-    if (inv.fileType === 'application/pdf') {
-      downloadPDF(inv);
-    } else {
-      const newWin = window.open('', '_blank', 'width=900,height=800');
-      if (!newWin) {
-        alert('Permet finestres emergents');
-        return;
-      }
-      newWin.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Factura</title><style>body{margin:0;background:#1e293b;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh}.hdr{width:100%;background:#334155;color:#fff;padding:15px 20px;box-sizing:border-box;position:fixed;top:0;left:0;z-index:10}.hdr h2{font-size:18px;margin:0 0 5px 0}.hdr p{font-size:12px;margin:0;opacity:0.8}img{max-width:90%;max-height:calc(100vh - 100px);margin-top:80px;box-shadow:0 4px 20px rgba(0,0,0,0.5)}</style></head><body><div class="hdr"><h2>Factura ...${inv.ultima_4_digits_numero_factura || ''} - ${inv.proveedor || ''}</h2><p>Data: ${inv.data || ''} | Total: ${inv.total_factura || '0'}€</p></div><img src="${inv.imageUrl}" alt="Factura"/></body></html>`);
-      newWin.document.close();
-    }
-  };
-
-  const printAll = () => {
-    const w = window.open('', '_blank');
-    const h = invoices.map(i => `<div style="page-break-after:always;padding:20px"><h3>...${i.ultima_4_digits_numero_factura || ''} - ${i.proveedor || ''}</h3><p>Data: ${i.data || ''} | Total: ${i.total_factura || '0'}€</p>${i.fileType === 'application/pdf' ? '<p>PDF</p>' : `<img src="${i.imageUrl}" style="max-width:100%">`}</div>`).join('');
-    w.document.write(`<html><head><title>Factures</title></head><body>${h}</body></html>`);
-    w.document.close();
-    w.print();
-  };
-
-  const analyzeMultiPageInvoice = async (file) => {
-    if (!supabase) {
-      alert('Error: Supabase client not initialized. Check Env Vars.');
-      return;
-    }
-
-    console.log('Iniciant analisi amb Gemini...', file.name, file.size, 'bytes');
-    setLoading(true);
-    setError(null);
-    setSaveStatus('Processant...');
-
-    const maxSize = 5 * 1024 * 1024; // 5MB max
-    if (file.size > maxSize) {
-      setError('Fitxer massa gran. Maxim 5MB. Prova amb un PDF mes petit o una imatge comprimida.');
-      setLoading(false);
-      return;
-    }
-
-    try {
-      console.log('Llegint fitxer...');
-      setSaveStatus('Llegint fitxer...');
-
-      const base64Data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-          const result = reader.result.split(',')[1];
-          resolve(result);
-        };
-        reader.onerror = () => reject(new Error('Error llegint fitxer'));
-        reader.readAsDataURL(file);
-      });
-
-      const fileDataUrl = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result);
-        reader.onerror = () => reject(new Error('Error llegint preview'));
-        reader.readAsDataURL(file);
-      });
-
-      console.log('Enviant a Supabase Edge Function (Gemini)...');
-      setSaveStatus('Analitzant amb Gemini...');
-
-      const { data, error: funcError } = await supabase.functions.invoke('process-document', {
-        body: { file: base64Data, fileType: file.type }
-      });
-
-      console.log('Resposta completa:', { data, funcError });
-
-      if (funcError) {
-        // More descriptive error from Supabase
-        const errorDetails = JSON.stringify(funcError, null, 2);
-        console.error('Error detallat de Supabase:', errorDetails);
-        throw new Error(`Edge Function Error: ${funcError.message || errorDetails}`);
-      }
-
-      if (data && data.error) {
-        console.error('Error retornat per la funció:', data.error);
-        throw new Error(`Gemini Error: ${data.error}`);
-      }
-
-      console.log('Resposta Gemini:', data);
-
-      const facturesArray = data.factures || [];
-      if (facturesArray.length === 0) {
-        throw new Error('No s\'han trobat factures');
-      }
-
-      const baseId = Date.now();
-      const newInvoices = [];
-      for (let i = 0; i < facturesArray.length; i++) {
-        const invoiceData = facturesArray[i];
-        invoiceData.id = baseId + (i * 1000);
-        invoiceData.imageUrl = fileDataUrl;
-        invoiceData.fileName = `${file.name} (Pagina ${i + 1}/${facturesArray.length})`;
-        invoiceData.fileType = file.type;
-
-        // Forçar tots els camps numèrics a tenir exactament 2 decimals
-        const numericFields = [
-          'base_iva_2', 'import_iva_2', 'base_iva_4', 'import_iva_4', 'base_iva_5', 'import_iva_5',
-          'base_iva_10', 'import_iva_10', 'base_iva_21', 'import_iva_21', 'base_exempte',
-          'base_irpf', 'percentatge_irpf', 'import_irpf', 'total_factura'
-        ];
-
-        numericFields.forEach(field => {
-          const value = Number(invoiceData[field] || 0);
-          invoiceData[field] = parseFloat(value.toFixed(2));
-        });
-
-        newInvoices.push(invoiceData);
-      }
-
-      const reversedInvoices = [...newInvoices].reverse();
-      const finalList = [...reversedInvoices, ...invoices];
-      setInvoices(finalList);
-      setSelectedInvoice(newInvoices[0] || null);
-
-      saveToStorage(finalList);
-
-      setSaveStatus(`✓ ${facturesArray.length} factures afegides`);
-      setTimeout(() => setSaveStatus(''), 3000);
-
-    } catch (err) {
-      console.error('Error analitzant:', err);
-      setError(err.message || 'Error desconegut');
-      setSaveStatus('❌ Error');
-      alert(`Error: ${err.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // Gmail States
+  const [showEmailModal, setShowEmailModal] = useState(false);
+  const [emails, setEmails] = useState([]);
+  const [loadingEmails, setLoadingEmails] = useState(false);
 
   const handleFileUpload = (e) => {
     const files = Array.from(e.target.files);
-    if (files.length === 0) return;
-
-    // Afegir fitxers a la cua
     setQueue(prev => [...prev, ...files]);
-    if (totalFiles === 0) setTotalFiles(files.length); // Inicialitzar comptador si començat de zero
-    else setTotalFiles(prev => prev + files.length); // Sumar si ja n'hi ha
-
-    e.target.value = '';
+    if (totalFiles === 0) setTotalFiles(files.length);
+    else setTotalFiles(prev => prev + prev.length);
   };
 
-  // Processar la cua automàticament
-  useEffect(() => {
-    if (processing || queue.length === 0) return;
+  const processFile = async (file) => {
+    setIsProcessing(true);
+    setSaveStatus(`Processant ${file.name}...`);
 
-    const processNext = async () => {
-      setProcessing(true);
-      const file = queue[0];
-      setCurrentFile(file);
+    try {
+      // 1. Convert File to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise((resolve) => {
+        reader.onload = () => resolve(reader.result.split(',')[1]);
+      });
+      reader.readAsDataURL(file);
+      const base64 = await base64Promise;
 
-      try {
-        await analyzeMultiPageInvoice(file);
-        setProcessedCount(prev => prev + 1);
-      } catch (err) {
-        console.error('Error processant fitxer de la cua:', err);
-      } finally {
-        setQueue(prev => prev.slice(1));
-        setProcessing(false);
-        setCurrentFile(null);
-      }
-    };
+      // 2. Call Supabase Edge Function (Gemini)
+      const { data, error: funcError } = await supabase.functions.invoke('process-document', {
+        body: {
+          file: base64,
+          fileType: file.type
+        }
+      });
 
-    processNext();
-  }, [queue, processing]);
+      if (funcError) throw funcError;
+      if (data.error) throw new Error(data.error);
 
-  // Reset counters when queue is empty and done
-  useEffect(() => {
-    if (queue.length === 0 && !processing && processedCount > 0) {
-      setTimeout(() => {
-        setProcessedCount(0);
-        setTotalFiles(0);
-        setSaveStatus(`✓ Procés completat: ${processedCount} fitxers`);
-      }, 2000);
+      // Gemini retorna un array "factures"
+      const facturesArray = data.factures || [];
+      if (facturesArray.length === 0) throw new Error('No s\'han trobat dades');
+
+      const newInvoices = facturesArray.map((inv, index) => {
+        // Preparem l'array d'IVAs detectats
+        const ivas = [];
+        if (inv.import_iva_21 > 0 || inv.base_iva_21 > 0) ivas.push({ taxa: 21, quota: inv.import_iva_21 || 0 });
+        if (inv.import_iva_10 > 0 || inv.base_iva_10 > 0) ivas.push({ taxa: 10, quota: inv.import_iva_10 || 0 });
+        if (inv.import_iva_4 > 0 || inv.base_iva_4 > 0) ivas.push({ taxa: 4, quota: inv.import_iva_4 || 0 });
+        if (inv.import_iva_5 > 0 || inv.base_iva_5 > 0) ivas.push({ taxa: 5, quota: inv.import_iva_5 || 0 });
+        if (inv.import_iva_2 > 0 || inv.base_iva_2 > 0) ivas.push({ taxa: 2, quota: inv.import_iva_2 || 0 });
+
+        // Si no s'ha detectat cap (però hi ha total), en posem un per defecte
+        if (ivas.length === 0) ivas.push({ taxa: 21, quota: 0 });
+
+        const quotaTotal = ivas.reduce((acc, curr) => acc + curr.quota, 0);
+
+        return {
+          id: Date.now() + Math.random() + index,
+          proveidor: inv.proveedor || 'Desconegut',
+          nifProveidor: inv.nif_proveedor || '',
+          data: inv.data || '',
+          numFactura: inv.numero_factura || '',
+          totalFactura: Number(inv.total_factura) || 0,
+          baseImposable: Number(inv.total_factura) - quotaTotal,
+          ivas: ivas,
+          imageUrl: URL.createObjectURL(file),
+          fileType: file.type,
+          fileName: file.name,
+          dateAdded: new Date().toISOString(),
+          revisat: false,
+          categoria: 'Material'
+        };
+      });
+
+      setInvoices(prev => [...newInvoices, ...prev]);
+      setSaveStatus(`${newInvoices.length} factura/es processada/es`);
+      if (newInvoices.length > 0) setSelectedInvoice(newInvoices[0]);
+
+    } catch (err) {
+      console.error('Error processant fitxer:', err);
+      alert('Error en el processament: ' + err.message);
+      setSaveStatus('Error en l\'última factura');
+    } finally {
+      setIsProcessing(false);
+      setTimeout(() => setSaveStatus(''), 3000);
     }
-  }, [queue, processing, processedCount]);
-
-  const exportToCSV = () => {
-    if (invoices.length === 0) return;
-    // Format compatible amb ReconciliationTool (amb totes les dades)
-    const headers = [
-      'DATA',
-      'ULTIMA 4 DIGITS NUMERO FACTURA',
-      'PROVEEDOR',
-      'NIF PROVEEDOR',
-      'BASE 2%', 'IVA 2%', 'BASE 4%', 'IVA 4%', 'BASE 5%', 'IVA 5%',
-      'BASE 10%', 'IVA 10%', 'BASE 21%', 'IVA 21%',
-      'BASE EXEMPTE', 'BASE IRPF', '% IRPF', 'IMPORT IRPF',
-      'TOTAL FACTURA'
-    ];
-    const rows = invoices.map(inv => [
-      inv.data || '',
-      inv.ultima_4_digits_numero_factura || '',
-      inv.proveedor || '',
-      inv.nif_proveedor || '',
-      Number(inv.base_iva_2 || 0).toFixed(2).replace('.', ','),
-      Number(inv.import_iva_2 || 0).toFixed(2).replace('.', ','),
-      Number(inv.base_iva_4 || 0).toFixed(2).replace('.', ','),
-      Number(inv.import_iva_4 || 0).toFixed(2).replace('.', ','),
-      Number(inv.base_iva_5 || 0).toFixed(2).replace('.', ','),
-      Number(inv.import_iva_5 || 0).toFixed(2).replace('.', ','),
-      Number(inv.base_iva_10 || 0).toFixed(2).replace('.', ','),
-      Number(inv.import_iva_10 || 0).toFixed(2).replace('.', ','),
-      Number(inv.base_iva_21 || 0).toFixed(2).replace('.', ','),
-      Number(inv.import_iva_21 || 0).toFixed(2).replace('.', ','),
-      Number(inv.base_exempte || 0).toFixed(2).replace('.', ','),
-      Number(inv.base_irpf || 0).toFixed(2).replace('.', ','),
-      Number(inv.percentatge_irpf || 0).toFixed(2).replace('.', ','),
-      Number(inv.import_irpf || 0).toFixed(2).replace('.', ','),
-      Number(inv.total_factura || 0).toFixed(2).replace('.', ',')
-    ]);
-    const csv = [headers.join(','), ...rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `factures_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
-  const deleteInvoice = (id) => {
-    const newList = invoices.filter(inv => inv.id !== id);
-    setInvoices(newList);
-    if (selectedInvoice?.id === id) setSelectedInvoice(null);
-    saveToStorage(newList);
+  useEffect(() => {
+    if (queue.length > 0 && !isProcessing) {
+      const nextFile = queue[0];
+      processFile(nextFile).then(() => {
+        setQueue(prev => prev.slice(1));
+      });
+    } else if (queue.length === 0 && totalFiles > 0) {
+      setTotalFiles(0);
+    }
+  }, [queue, isProcessing]);
+
+  // Gmail Logic
+  const fetchEmails = async () => {
+    setLoadingEmails(true);
+    setShowEmailModal(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('fetch-emails', {
+        body: { labelName: 'factures pendents' }
+      });
+      if (error) throw error;
+      setEmails(data.emails || []);
+    } catch (err) {
+      console.error('Error fetching emails:', err);
+      alert('Error connectant amb Gmail: ' + err.message);
+    } finally {
+      setLoadingEmails(false);
+    }
   };
 
-  const clearAll = () => {
-    if (!window.confirm('Esborrar tot?')) return;
-    setInvoices([]);
-    setSelectedInvoice(null);
-    saveToStorage([]);
+  const importFromEmail = async (attachment, email) => {
+    setSaveStatus(`Descarregant ${attachment.filename}...`);
+    try {
+      const { data, error } = await supabase.functions.invoke('get-attachment', {
+        body: {
+          messageId: attachment.messageId,
+          attachmentId: attachment.id
+        }
+      });
+
+      if (error) throw error;
+      if (data.error) throw new Error(data.error);
+
+      // Convertim el base64 que ens arriba a un objecte File
+      const byteCharacters = atob(data.data);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const fileBlob = new Blob([byteArray], { type: attachment.mimeType });
+      const file = new File([fileBlob], attachment.filename, { type: attachment.mimeType });
+
+      // Afegim a la cua per analitzar amb Gemini
+      setQueue(prev => [...prev, file]);
+      setTotalFiles(prev => prev + 1);
+      setSaveStatus(`✓ ${attachment.filename} a la cua`);
+
+    } catch (err) {
+      console.error('Error descarregant adjunt:', err);
+      alert('Error en descarregar el fitxer: ' + err.message);
+    } finally {
+      setTimeout(() => setSaveStatus(''), 2000);
+    }
   };
 
-  // Helper to render edit input
-  const renderEditInput = (field, align = 'left') => (
-    <input
-      type="text"
-      value={editData[field] || 0}
-      onChange={e => updateField(field, e.target.value)}
-      className={`w-full px-1 py-1 bg-slate-600 border border-slate-500 rounded text-xs text-slate-100 ${align === 'right' ? 'text-right' : ''}`}
-      onClick={e => e.stopPropagation()}
-    />
-  );
+
+  const toggleRevisat = (inv) => {
+    const updated = { ...inv, revisat: !inv.revisat };
+    updateInvoice(updated);
+  };
 
   return (
-    <div className="min-h-screen bg-slate-900 p-4">
-      <div className="max-w-[95%] mx-auto">
-        <div className="bg-slate-800 rounded-lg shadow-xl p-6 mb-4 sticky top-0 z-20 border-b border-emerald-500/20">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Scan className="w-8 h-8 text-emerald-400" />
-              <div>
-                <h1 className="text-2xl font-bold text-slate-100">Projecte Fusió: Scanner + Conciliació</h1>
-                <div className="flex items-center gap-2 mt-1">
-                  <span className="text-xs text-emerald-400">Powered by Gemini 1.5 Flash</span>
-                  {saveStatus && <span className="text-xs text-slate-300">{saveStatus}</span>}
-                </div>
-              </div>
-            </div>
-
-            <div className="flex gap-2 items-center">
-              {/* Scan Button Integrated in Sticky Header */}
-              <input type="file" id="f_sticky" accept="image/*,application/pdf" multiple onChange={handleFileUpload} className="hidden" disabled={loading} />
-              <label htmlFor="f_sticky" className={`flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-lg hover:from-emerald-500 hover:to-teal-500 text-sm font-bold shadow-lg transition-all ${loading ? 'cursor-not-allowed opacity-70' : 'cursor-pointer'}`}>
-                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Scan className="w-4 h-4" />}
-                {loading ? (totalFiles > 1 ? `Analitzant (${processedCount + 1}/${totalFiles})...` : 'Analitzant...') : 'Escanejar amb Gemini'}
-              </label>
-
-              <div className="h-6 w-px bg-slate-600 mx-2"></div>
-
-              <label className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 text-sm cursor-pointer">
-                <FileUp className="w-4 h-4" />Import
-                <input type="file" accept=".json" onChange={importJSON} className="hidden" />
-              </label>
-              <button onClick={exportJSON} className="flex items-center gap-2 px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-500 text-sm">
-                <FileDown className="w-4 h-4" />Export JSON
-              </button>
-              {invoices.length > 0 && (
-                <>
-                  <button onClick={exportToCSV} className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-500 text-sm">
-                    <Download className="w-4 h-4" />CSV
-                  </button>
-                  <button
-                    onClick={sendToReconciliation}
-                    disabled={loading}
-                    className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-600 to-amber-600 text-white rounded-lg hover:from-orange-500 hover:to-amber-500 text-sm font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    <ExternalLink className="w-4 h-4" />
-                    Enviar al Conciliador
-                  </button>
-                  <button onClick={clearAll} className="flex items-center gap-2 px-3 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 text-sm">
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </>
-              )}
-            </div>
+    <div className="flex flex-col h-full bg-slate-900 text-slate-100">
+      {/* Header with quick actions */}
+      <div className="p-6 border-b border-slate-700 bg-slate-800 shadow-lg">
+        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-blue-500 bg-clip-text text-transparent">
+              Escàner Intel·ligent de Factures
+            </h1>
+            <p className="text-slate-400 text-sm">Puja fitxers o importa directament des del teu Gmail</p>
           </div>
 
-          {error && <div className="mt-3 p-2 bg-red-900/50 border border-red-500 rounded text-center"><p className="text-red-300 text-sm">{error}</p></div>}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={fetchEmails}
+              className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-all shadow-lg shadow-red-900/20 font-bold"
+            >
+              <Mail size={18} />
+              Gmail Import
+            </button>
+            <label className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg cursor-pointer transition-all shadow-lg shadow-emerald-900/20 font-bold">
+              <Plus size={18} />
+              Puja Fitxer
+              <input type="file" multiple className="hidden" onChange={handleFileUpload} accept="image/*,application/pdf" />
+            </label>
+          </div>
         </div>
 
-        {invoices.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'row', gap: '16px', flexWrap: 'wrap' }}>
-            <div style={{ flex: `${100 - previewSize}`, minWidth: '600px' }} className="bg-slate-800 rounded-lg shadow-xl p-4">
-              <h2 className="text-xl font-bold mb-4 text-slate-100">Registres Fiscals ({invoices.length})</h2>
-              <div className="overflow-auto" style={{ maxHeight: '70vh' }}>
-                <table className="w-full text-[10px] sm:text-xs border-collapse">
-                  <thead className="sticky top-0 bg-slate-900 z-10 shadow-md">
-                    <tr className="border-b border-emerald-500/50 text-emerald-400">
-                      <th className="p-2 text-left min-w-[80px]">DATA</th>
-                      <th className="p-2 text-left">Nº FAC</th>
-                      <th className="p-2 text-left min-w-[100px]">PROVEEDOR</th>
-                      <th className="p-2 text-left">NIF</th>
-
-                      <th className="p-2 text-right bg-slate-800/50">2%</th>
-                      <th className="p-2 text-right bg-slate-800/50">4%</th>
-                      <th className="p-2 text-right bg-slate-800/50">5%</th>
-                      <th className="p-2 text-right bg-slate-800/50">10%</th>
-                      <th className="p-2 text-right bg-slate-800/50">21%</th>
-
-                      <th className="p-2 text-right text-teal-400">EXE</th>
-                      <th className="p-2 text-right text-orange-400">IRPF</th>
-                      <th className="p-2 text-right font-bold text-white">TOTAL</th>
-                      <th className="p-2 text-center">ACC</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-700">
-                    {invoices.map(inv => (
-                      <tr key={inv.id} className={`hover:bg-slate-700 group cursor-pointer transition-colors ${selectedInvoice?.id === inv.id ? 'bg-blue-900/20' : ''} ${inv.revisat ? 'bg-emerald-900/10' : ''}`} onClick={() => setSelectedInvoice(inv)}>
-                        {editingId === inv.id ? (
-                          <>
-                            <td className="p-1">{renderEditInput('data')}</td>
-                            <td className="p-1">{renderEditInput('ultima_4_digits_numero_factura')}</td>
-                            <td className="p-1">{renderEditInput('proveedor')}</td>
-                            <td className="p-1">{renderEditInput('nif_proveedor')}</td>
-
-                            <td className="p-1 flex flex-col gap-1">
-                              {renderEditInput('base_iva_2', 'right')}
-                              {renderEditInput('import_iva_2', 'right')}
-                            </td>
-                            <td className="p-1">
-                              {renderEditInput('base_iva_4', 'right')}
-                              {renderEditInput('import_iva_4', 'right')}
-                            </td>
-                            <td className="p-1">
-                              {renderEditInput('base_iva_5', 'right')}
-                              {renderEditInput('import_iva_5', 'right')}
-                            </td>
-                            <td className="p-1">
-                              {renderEditInput('base_iva_10', 'right')}
-                              {renderEditInput('import_iva_10', 'right')}
-                            </td>
-                            <td className="p-1">
-                              {renderEditInput('base_iva_21', 'right')}
-                              {renderEditInput('import_iva_21', 'right')}
-                            </td>
-
-                            <td className="p-1">{renderEditInput('base_exempte', 'right')}</td>
-                            <td className="p-1">
-                              <div className="text-[9px] text-slate-400 text-right">%</div>
-                              {renderEditInput('percentatge_irpf', 'right')}
-                              <div className="text-[9px] text-slate-400 text-right">Imp</div>
-                              {renderEditInput('import_irpf', 'right')}
-                            </td>
-                            <td className="p-1">{renderEditInput('total_factura', 'right')}</td>
-
-                            <td className="p-1" onClick={e => e.stopPropagation()}>
-                              <div className="flex flex-col gap-1">
-                                <button onClick={saveEdit} className="p-1 bg-emerald-600 rounded text-white hover:bg-emerald-500"><Save className="w-3 h-3" /></button>
-                                <button onClick={() => setEditingId(null)} className="p-1 bg-red-600 rounded text-white hover:bg-red-500"><X className="w-3 h-3" /></button>
-                              </div>
-                            </td>
-                          </>
-                        ) : (
-                          <>
-                            <td className="p-2 text-slate-300">{inv.data}</td>
-                            <td className="p-2 text-slate-400">...{inv.ultima_4_digits_numero_factura}</td>
-                            <td className="p-2 text-slate-200 font-medium">{inv.proveedor}</td>
-                            <td className="p-2 text-slate-400">{inv.nif_proveedor}</td>
-
-                            {/* Compact IVA Columns: Shows Base / Import */}
-                            <td className="p-2 text-right text-slate-400">
-                              {Number(inv.base_iva_2) > 0 ? (<div><div className="text-slate-200">{inv.base_iva_2}</div><div className="text-slate-500">{inv.import_iva_2}</div></div>) : '-'}
-                            </td>
-                            <td className="p-2 text-right text-slate-400">
-                              {Number(inv.base_iva_4) > 0 ? (<div><div className="text-slate-200">{inv.base_iva_4}</div><div className="text-slate-500">{inv.import_iva_4}</div></div>) : '-'}
-                            </td>
-                            <td className="p-2 text-right text-slate-400">
-                              {Number(inv.base_iva_5) > 0 ? (<div><div className="text-slate-200">{inv.base_iva_5}</div><div className="text-slate-500">{inv.import_iva_5}</div></div>) : '-'}
-                            </td>
-                            <td className="p-2 text-right text-slate-400">
-                              {Number(inv.base_iva_10) > 0 ? (<div><div className="text-slate-200">{inv.base_iva_10}</div><div className="text-slate-500">{inv.import_iva_10}</div></div>) : '-'}
-                            </td>
-                            <td className="p-2 text-right text-slate-400">
-                              {Number(inv.base_iva_21) > 0 ? (<div><div className="text-slate-200">{inv.base_iva_21}</div><div className="text-slate-500">{inv.import_iva_21}</div></div>) : '-'}
-                            </td>
-
-                            <td className="p-2 text-right text-teal-300">{Number(inv.base_exempte) > 0 ? inv.base_exempte : '-'}</td>
-                            <td className="p-2 text-right">
-                              {Number(inv.import_irpf) > 0 ? (
-                                <div className="bg-orange-900/30 px-2 py-1 rounded border border-orange-700">
-                                  <div className="text-orange-300 font-bold">-{inv.import_irpf}€</div>
-                                  <div className="text-[9px] text-orange-500">IRPF {inv.percentatge_irpf}%</div>
-                                </div>
-                              ) : (
-                                <span className="text-slate-600">-</span>
-                              )}
-                            </td>
-                            <td className="p-2 text-right font-bold text-emerald-400 text-sm">
-                              <div className="flex items-center justify-end gap-1">
-                                {(() => {
-                                  const validation = validateTotal(inv);
-                                  return (
-                                    <>
-                                      <span>{inv.total_factura} €</span>
-                                      {validation.valid ? (
-                                        <span className="text-emerald-500 text-xs" title={`✓ Total correcte (Calculat: ${validation.totalCalculat}€)`}>✓</span>
-                                      ) : (
-                                        <span className="text-red-500 text-xs" title={`⚠ Diferència: ${validation.diferencia}€ (Calculat: ${validation.totalCalculat}€ vs Declarat: ${validation.totalDeclarat}€)`}>⚠</span>
-                                      )}
-                                    </>
-                                  );
-                                })()}
-                              </div>
-                            </td>
-
-                            <td className="p-2 text-center" onClick={e => e.stopPropagation()}>
-                              <div className="flex gap-1 justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button onClick={() => toggleRevisat(inv)} className={`p-1 rounded ${inv.revisat ? 'bg-emerald-600 text-white' : 'bg-slate-600 text-slate-300'}`} title="Validar">
-                                  {inv.revisat ? '✓' : ''}
-                                </button>
-                                <button onClick={() => startEdit(inv)} className="p-1 bg-blue-600 text-white rounded hover:bg-blue-500"><Edit2 className="w-3 h-3" /></button>
-                                <button onClick={() => deleteInvoice(inv.id)} className="p-1 bg-red-600 text-white rounded hover:bg-red-500"><Trash2 className="w-3 h-3" /></button>
-                              </div>
-                            </td>
-                          </>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div style={{ flex: `${previewSize}`, minWidth: '300px' }} className="bg-slate-800 rounded-lg shadow-xl p-4 flex flex-col">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-slate-100"><Eye className="w-5 h-5 text-emerald-400" />Previsualització</h2>
-                <input
-                  type="range"
-                  min="20"
-                  max="60"
-                  value={previewSize}
-                  onChange={(e) => setPreviewSize(Number(e.target.value))}
-                  className="w-24 accent-emerald-500"
-                />
-              </div>
-              {selectedInvoice ? (
-                <div className="flex-1 flex flex-col overflow-hidden">
-                  <div className="bg-slate-700 p-3 rounded-lg mb-2">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <h3 className="font-bold text-slate-100 mb-1">{selectedInvoice.proveedor}</h3>
-                        <p className="text-xs text-slate-400">Fitxer: {selectedInvoice.fileName}</p>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-xl font-bold text-emerald-400">{selectedInvoice.total_factura}€</div>
-                        <div className="text-xs text-slate-300">{selectedInvoice.data}</div>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="border border-slate-600 rounded-lg overflow-auto flex-1 bg-slate-900 flex items-center justify-center">
-                    {selectedInvoice.fileType === 'application/pdf' ? (
-                      <div className="text-center p-8">
-                        <FileText className="w-16 h-16 text-slate-600 mx-auto mb-2" />
-                        <p className="text-slate-400">Vista prèvia no disponible per PDF multipàgina</p>
-                        <button onClick={() => openInWindow(selectedInvoice)} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm">Obrir en finestra</button>
-                      </div>
-                    ) : (
-                      <img src={selectedInvoice.imageUrl} alt="Factura" className="max-w-full h-auto object-contain" />
-                    )}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex-1 flex items-center justify-center text-slate-500">
-                  <p>Selecciona una factura</p>
+        {/* Status Bar */}
+        {(isProcessing || queue.length > 0 || saveStatus) && (
+          <div className="mt-4 flex items-center gap-4 bg-slate-900/50 p-3 rounded-xl border border-slate-700 animate-in fade-in slide-in-from-top-2">
+            {isProcessing ? (
+              <Loader2 className="animate-spin text-emerald-400" size={20} />
+            ) : (
+              <CheckCircle className="text-emerald-400" size={20} />
+            )}
+            <div className="flex-1">
+              <p className="text-sm font-medium">{saveStatus || (isProcessing ? 'Analitzant factura amb Gemini...' : 'Cua de processament')}</p>
+              {totalFiles > 0 && (
+                <div className="w-full bg-slate-800 h-1.5 rounded-full mt-2 overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-full transition-all duration-500"
+                    style={{ width: `${((totalFiles - queue.length) / totalFiles) * 100}%` }}
+                  ></div>
                 </div>
               )}
             </div>
+            {queue.length > 0 && <span className="text-xs font-mono bg-slate-800 px-2 py-1 rounded text-slate-400">{queue.length} pendents</span>}
           </div>
         )}
       </div>
+
+      <div className="flex flex-1 overflow-hidden">
+        {/* Left Side: Invoice List - Narrower (w-80) */}
+        <div className="w-80 border-r border-slate-700 flex flex-col bg-slate-900/50 shrink-0">
+          <div className="p-4 bg-slate-800/30 border-b border-slate-700 flex justify-between items-center bg-slate-900">
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                className="w-4 h-4 rounded border-slate-700 bg-slate-800 text-emerald-500 focus:ring-emerald-500/20"
+                checked={invoices.length > 0 && selectedIds.size === invoices.length}
+                onChange={(e) => {
+                  if (e.target.checked) setSelectedIds(new Set(invoices.map(i => i.id)));
+                  else setSelectedIds(new Set());
+                }}
+              />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Totes</span>
+            </div>
+
+            {selectedIds.size > 0 && (
+              <button
+                onClick={handleBulkSend}
+                disabled={processingBulk}
+                className="flex items-center gap-1.5 px-3 py-1 bg-emerald-600/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-600 hover:text-white transition-all animate-in fade-in zoom-in-95"
+              >
+                {processingBulk ? <Loader2 size={12} className="animate-spin" /> : <Send size={12} />}
+                Pujar {selectedIds.size}
+              </button>
+            )}
+          </div>
+
+          <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-2">
+            {invoices.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-slate-600 p-8 text-center">
+                <Scan size={48} className="mb-4 opacity-20" />
+                <p className="text-sm">Bústia d'entrada buida.</p>
+              </div>
+            ) : (
+              invoices.map((inv) => (
+                <div
+                  key={inv.id}
+                  onClick={() => setSelectedInvoice(inv)}
+                  className={`p-3 rounded-xl border transition-all cursor-pointer group relative ${selectedInvoice?.id === inv.id
+                    ? 'bg-emerald-500/10 border-emerald-500/50 shadow-lg'
+                    : 'bg-slate-800/50 border-slate-700/50 hover:bg-slate-800'
+                    }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="checkbox"
+                      onClick={(e) => e.stopPropagation()}
+                      checked={selectedIds.has(inv.id)}
+                      onChange={() => {
+                        setSelectedIds(prev => {
+                          const next = new Set(prev);
+                          if (next.has(inv.id)) next.delete(inv.id);
+                          else next.add(inv.id);
+                          return next;
+                        });
+                      }}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500/20 z-10"
+                    />
+
+                    <div className={`p-2 rounded-lg ${inv.revisat ? 'bg-emerald-500/20' : 'bg-slate-700'}`}>
+                      {inv.fileType === 'application/pdf' ? (
+                        <FileText size={16} className={inv.revisat ? 'text-emerald-400' : 'text-slate-400'} />
+                      ) : (
+                        <Scan size={16} className={inv.revisat ? 'text-emerald-400' : 'text-slate-400'} />
+                      )}
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-bold text-[11px] truncate text-slate-200">{inv.proveidor || 'Desconegut'}</h3>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-[10px] text-slate-500 font-mono">{inv.data || '--/--/--'}</span>
+                        <span className="text-[11px] font-black text-emerald-400">{inv.totalFactura?.toFixed(2)}€</span>
+                      </div>
+                    </div>
+
+                    {/* Botó esborrar individual al fer hover */}
+                    <button
+                      onClick={(e) => deleteInvoice(inv.id, e)}
+                      className="opacity-0 group-hover:opacity-100 p-2 text-slate-500 hover:text-red-400 transition-all"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Right Side: Details & Viewer */}
+        <div className="flex-1 flex flex-col bg-slate-900 overflow-hidden relative">
+          {selectedInvoice ? (
+            <div className="flex flex-col h-full animate-in fade-in duration-300">
+              {/* Toolbar Viewer */}
+              <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center shadow-lg z-10">
+                <div className="flex items-center gap-4">
+                  <div className="flex items-center bg-slate-900 rounded-lg p-1 border border-slate-700">
+                    <button onClick={() => setZoomLevel(prev => Math.max(0.5, prev - 0.1))} className="p-1.5 hover:bg-slate-800 rounded text-slate-400"><ZoomOut size={16} /></button>
+                    <span className="text-[10px] font-bold w-10 text-center text-slate-500">{Math.round(zoomLevel * 100)}%</span>
+                    <button onClick={() => setZoomLevel(prev => Math.min(2, prev + 0.1))} className="p-1.5 hover:bg-slate-800 rounded text-slate-400"><ZoomIn size={16} /></button>
+                  </div>
+                  <button className="p-2 hover:bg-slate-900 rounded-lg text-slate-400 transition-colors border border-transparent hover:border-slate-700"><RotateCw size={18} /></button>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => toggleRevisat(selectedInvoice)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-bold text-sm transition-all ${selectedInvoice.revisat
+                      ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-900/20'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                      }`}
+                  >
+                    <CheckCircle size={16} />
+                    {selectedInvoice.revisat ? 'Revisat' : 'Marcar Revisat'}
+                  </button>
+                  <button
+                    onClick={() => deleteInvoice(selectedInvoice.id)}
+                    className="p-2 bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-all border border-red-500/20"
+                  >
+                    <Trash2 size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Viewer & Data split */}
+              <div className="flex flex-1 overflow-hidden p-4 gap-4">
+                <div className="w-[400px] shrink-0 flex flex-col gap-4 overflow-y-auto custom-scrollbar">
+                  {/* Data Card */}
+                  <div className="bg-slate-800/50 rounded-2xl border border-slate-700 p-6 shadow-xl flex flex-col">
+                    <div className="flex items-center justify-between mb-6 border-b border-slate-700/50 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="p-3 bg-indigo-500/10 rounded-2xl">
+                          <Tag className="text-indigo-400" size={24} />
+                        </div>
+                        <div>
+                          <input
+                            value={selectedInvoice.proveidor}
+                            onChange={(e) => updateInvoice({ ...selectedInvoice, proveidor: e.target.value })}
+                            className="bg-transparent border-none text-xl font-black text-white p-0 focus:ring-0 w-full"
+                          />
+                          <p className="text-xs text-slate-500 font-mono">ID: {String(selectedInvoice.id).slice(-6)}</p>
+                        </div>
+                      </div>
+
+                      {/* Validador de sumes */}
+                      <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full border text-[10px] font-black uppercase tracking-widest ${Math.abs((Number(selectedInvoice.baseImposable) || 0) + (selectedInvoice.ivas?.reduce((acc, i) => acc + (Number(i.quota) || 0), 0) || 0) - (Number(selectedInvoice.totalFactura) || 0)) < 0.01
+                        ? 'bg-emerald-500/10 border-emerald-500/50 text-emerald-400'
+                        : 'bg-rose-500/10 border-rose-500/50 text-rose-400'
+                        }`}>
+                        {Math.abs((Number(selectedInvoice.baseImposable) || 0) + (selectedInvoice.ivas?.reduce((acc, i) => acc + (Number(i.quota) || 0), 0) || 0) - (Number(selectedInvoice.totalFactura) || 0)) < 0.01 ? (
+                          <> <CheckCircle size={12} /> Sumes OK </>
+                        ) : (
+                          <> <AlertCircle size={12} /> Error Suma </>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <Calendar size={12} /> Data
+                        </label>
+                        <input
+                          value={selectedInvoice.data}
+                          onChange={(e) => updateInvoice({ ...selectedInvoice, data: e.target.value })}
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <FileText size={12} /> Nº Factura
+                        </label>
+                        <input
+                          value={selectedInvoice.numFactura}
+                          placeholder="...1234"
+                          onChange={(e) => updateInvoice({ ...selectedInvoice, numFactura: e.target.value })}
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <Tag size={12} /> NIF
+                        </label>
+                        <input
+                          value={selectedInvoice.nifProveidor}
+                          onChange={(e) => updateInvoice({ ...selectedInvoice, nifProveidor: e.target.value })}
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                          <Plus size={12} /> Categoria
+                        </label>
+                        <select
+                          value={selectedInvoice.categoria}
+                          onChange={(e) => updateInvoice({ ...selectedInvoice, categoria: e.target.value })}
+                          className="w-full bg-slate-900/80 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-bold outline-none focus:ring-2 focus:ring-emerald-500 transition-all"
+                        >
+                          <option value="Material">Material</option>
+                          <option value="Serveis">Serveis</option>
+                          <option value="Subministraments">Subministraments</option>
+                          <option value="Altres">Altres</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="mt-8 space-y-4">
+                      <div className="p-5 bg-slate-900/50 rounded-2xl border border-slate-700/50">
+                        <div className="space-y-4">
+                          <div className="flex justify-between items-center bg-slate-900/50 p-3 rounded-xl border border-slate-700/30">
+                            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Base Imposable</span>
+                            <div className="flex items-center gap-1 border-b border-white/10">
+                              <input
+                                type="text"
+                                value={selectedInvoice.baseImposable?.toString().replace('.', ',')}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(',', '.');
+                                  if (val === '' || val === '.' || !isNaN(val)) {
+                                    updateInvoice({ ...selectedInvoice, baseImposable: val });
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const num = parseFloat(selectedInvoice.baseImposable) || 0;
+                                  updateInvoice({ ...selectedInvoice, baseImposable: num });
+                                }}
+                                className="bg-transparent border-none text-right font-mono text-slate-100 p-0 focus:ring-0 w-24"
+                              />
+                              <span className="text-slate-400">€</span>
+                            </div>
+                          </div>
+
+                          {/* Llista d'IVAs Editables */}
+                          <div className="space-y-3">
+                            <div className="flex justify-between items-center px-1">
+                              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Desglossament IVA</span>
+                              <button
+                                onClick={() => {
+                                  const currentIvas = selectedInvoice.ivas || [];
+                                  updateInvoice({ ...selectedInvoice, ivas: [...currentIvas, { taxa: 21, quota: 0 }] });
+                                }}
+                                className="p-1 hover:bg-emerald-500/20 text-emerald-400 rounded-lg transition-colors"
+                              >
+                                <Plus size={14} />
+                              </button>
+                            </div>
+
+                            {(selectedInvoice.ivas || []).map((iva, idx) => (
+                              <div key={idx} className="flex justify-between items-center bg-slate-900/50 p-2 rounded-xl border border-slate-700/30 group/iva">
+                                <div className="flex items-center gap-1">
+                                  <span className="text-[9px] text-indigo-400 font-bold uppercase tracking-widest">Taxa:</span>
+                                  <input
+                                    type="text"
+                                    value={iva.taxa?.toString().replace('.', ',')}
+                                    onChange={(e) => {
+                                      const val = e.target.value.replace(',', '.');
+                                      if (val === '' || val === '.' || !isNaN(val)) {
+                                        const newIvas = [...selectedInvoice.ivas];
+                                        newIvas[idx].taxa = val;
+                                        updateInvoice({ ...selectedInvoice, ivas: newIvas });
+                                      }
+                                    }}
+                                    onBlur={() => {
+                                      const newIvas = [...selectedInvoice.ivas];
+                                      newIvas[idx].taxa = parseFloat(iva.taxa) || 0;
+                                      updateInvoice({ ...selectedInvoice, ivas: newIvas });
+                                    }}
+                                    className="bg-slate-900/50 border border-indigo-500/30 rounded text-center font-bold text-[10px] text-indigo-400 p-0.5 focus:ring-1 focus:ring-indigo-500 w-10 outline-none"
+                                  />
+                                  <span className="text-[10px] text-indigo-400 font-black">%</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-1 border-b border-white/10">
+                                    <input
+                                      type="text"
+                                      value={iva.quota?.toString().replace('.', ',')}
+                                      onChange={(e) => {
+                                        const val = e.target.value.replace(',', '.');
+                                        if (val === '' || val === '.' || !isNaN(val)) {
+                                          const newIvas = [...selectedInvoice.ivas];
+                                          newIvas[idx].quota = val;
+                                          updateInvoice({ ...selectedInvoice, ivas: newIvas });
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        const newIvas = [...selectedInvoice.ivas];
+                                        newIvas[idx].quota = parseFloat(iva.quota) || 0;
+                                        updateInvoice({ ...selectedInvoice, ivas: newIvas });
+                                      }}
+                                      className="bg-transparent border-none text-right font-mono text-slate-100 p-0 focus:ring-0 w-20"
+                                    />
+                                    <span className="text-slate-400">€</span>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      const newIvas = selectedInvoice.ivas.filter((_, i) => i !== idx);
+                                      updateInvoice({ ...selectedInvoice, ivas: newIvas });
+                                    }}
+                                    className="opacity-0 group-hover/iva:opacity-100 p-1 text-slate-600 hover:text-red-400 transition-all"
+                                  >
+                                    <X size={12} />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div className="flex justify-between items-center pt-2 border-t border-slate-700 mt-2">
+                            <span className="text-sm font-black text-white uppercase tracking-widest">Total Factura</span>
+                            <div className="flex items-center gap-1">
+                              <input
+                                type="text"
+                                value={selectedInvoice.totalFactura?.toString().replace('.', ',')}
+                                onChange={(e) => {
+                                  const val = e.target.value.replace(',', '.');
+                                  if (val === '' || val === '.' || !isNaN(val)) {
+                                    updateInvoice({ ...selectedInvoice, totalFactura: val });
+                                  }
+                                }}
+                                onBlur={() => {
+                                  const num = parseFloat(selectedInvoice.totalFactura) || 0;
+                                  updateInvoice({ ...selectedInvoice, totalFactura: num });
+                                }}
+                                className="bg-transparent border-none text-right font-black text-2xl text-emerald-400 p-0 focus:ring-0 w-32"
+                              />
+                              <span className="text-emerald-400 font-black text-2xl">€</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex-1 border border-slate-700 rounded-2xl overflow-hidden bg-slate-950 flex items-start justify-center shadow-2xl relative">
+                  <div
+                    style={{ transform: `scale(${zoomLevel})`, transformOrigin: 'top center', transition: 'transform 0.2s' }}
+                    className="w-full h-full flex justify-center"
+                  >
+                    {selectedInvoice.fileType === 'application/pdf' || selectedInvoice.imageUrl?.startsWith('data:application/pdf') ? (
+                      <iframe
+                        src={selectedInvoice.imageUrl}
+                        className="w-full h-full bg-slate-800"
+                        style={{ minHeight: '100%' }}
+                        title="PDF Preview"
+                      />
+                    ) : (
+                      <img src={selectedInvoice.imageUrl} alt="Factura" className="max-w-full h-auto object-contain bg-white shadow-2xl" />
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center text-slate-600">
+              <div className="p-8 bg-slate-800/20 rounded-full border border-slate-800 mb-6">
+                <Eye size={64} className="opacity-20 text-emerald-500" />
+              </div>
+              <h2 className="text-lg font-black text-slate-400">Visor de Factures Intel·ligent</h2>
+              <p className="text-sm mt-2 max-w-xs text-center opacity-50">Selecciona un document de la llista per veure la previsualització i les dades extretes per l'IA.</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Email Modal */}
+      {showEmailModal && (
+        <div className="fixed inset-0 bg-black/90 flex items-start justify-center z-50 p-4 md:p-8 backdrop-blur-md overflow-hidden animate-in fade-in duration-300">
+          <div className="bg-slate-800 rounded-3xl shadow-2xl w-full max-w-5xl border border-white/10 max-h-[90vh] flex flex-col relative animate-in slide-in-from-bottom-4 duration-500">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-700 flex justify-between items-center bg-slate-900/50 rounded-t-3xl">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-red-500/10 rounded-2xl border border-red-500/20">
+                  <Mail className="text-red-500" size={24} />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-white">Importar de Gmail</h3>
+                  <p className="text-xs text-slate-500 font-bold uppercase tracking-widest">Factures pendents a la teva bústia</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEmailModal(false)}
+                className="p-2 bg-slate-700/50 hover:bg-red-500/20 hover:text-red-400 text-slate-400 rounded-full transition-all border border-transparent hover:border-red-500/20"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar bg-slate-900/20">
+              {loadingEmails ? (
+                <div className="flex flex-col items-center justify-center py-24 gap-6">
+                  <div className="relative">
+                    <Loader2 className="w-16 h-16 text-emerald-500 animate-spin" />
+                    <Scan className="absolute inset-0 m-auto text-emerald-500/50 animate-pulse" size={24} />
+                  </div>
+                  <div className="text-center space-y-2">
+                    <p className="text-xl font-black text-white">Escanejant la teva bústia...</p>
+                    <p className="text-sm text-slate-500 font-medium">Estem buscant factures amb l'etiqueta "factures pendents"</p>
+                  </div>
+                </div>
+              ) : emails.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="p-8 bg-slate-800/30 rounded-full border border-slate-700 mb-6">
+                    <Mail size={64} className="text-slate-600 opacity-20" />
+                  </div>
+                  <h4 className="text-lg font-black text-slate-300">No s'han trobat factures pendents</h4>
+                  <p className="text-sm text-slate-500 mt-2 max-w-xs mx-auto font-medium leading-relaxed">
+                    Revisa que el nom de l'etiqueta a Gmail sigui exactament <span className="text-emerald-500 font-mono font-bold italic">"factures pendents"</span> i que els correus tinguin adjunts.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-8">
+                  {emails.map(email => (
+                    <div key={email.id} className="bg-slate-800/30 rounded-2xl p-6 border border-slate-700/50 hover:border-slate-600 transition-all duration-300 shadow-xl">
+                      <div className="flex justify-between items-start mb-6 border-l-4 border-emerald-500 pl-4">
+                        <div>
+                          <h4 className="font-black text-white text-lg group-hover:text-emerald-400 transition-colors uppercase tracking-tight">{email.subject || '(Sense assumpte)'}</h4>
+                          <div className="flex items-center gap-3 mt-2 text-xs text-slate-500 font-bold uppercase tracking-wider">
+                            <span className="flex items-center gap-1"><Plus size={10} /> {email.from}</span>
+                            <span className="text-slate-700">•</span>
+                            <span className="flex items-center gap-1"><Calendar size={10} /> {new Date(email.date).toLocaleDateString()}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {email.attachments.map(att => {
+                          const isImported = queue.some(q => q.name === att.filename) || invoices.some(inv => inv.fileName?.includes(att.filename));
+                          return (
+                            <EmailAttachmentCard
+                              key={att.id}
+                              att={att}
+                              email={email}
+                              isImported={isImported}
+                              onImport={importFromEmail}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t border-slate-700 bg-slate-900/50 rounded-b-3xl">
+              <div className="flex justify-between items-center text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+                <div className="flex items-center gap-4">
+                  <span className="flex items-center gap-1.5"><Clock size={14} /> Sincronitzat fa un moment</span>
+                  <span className="text-slate-700">|</span>
+                  <span className="text-emerald-500/70">{emails.length} correus trobats</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-lg border border-slate-700">
+                  <AlertCircle size={14} className="text-amber-500" />
+                  <span>Es mostren PDFs i Imatges</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+};
+
+export default InvoiceScanner;
